@@ -14,10 +14,12 @@
  """
 
 import arcpy
+import datetime
 import logging
 import os
 import sys
 import traceback
+import re
 from logging.handlers import RotatingFileHandler
 
 
@@ -107,27 +109,26 @@ def is_valid_path(parser, path):
 
 
 def Attributor():
+
     # Paths
     fgdb_folder = r"F:\Shares\FGDB_Services"
-    # sde = os.path.join(fgdb_folder, r"DatabaseConnections\COSPW@imSPFLD@MCWINTCWDB.sde")
-    # script_folder = os.path.dirname(sys.argv[0])
+    sde = os.path.join(fgdb_folder, r"DatabaseConnections\COSPW@imSPFLD@MCWINTCWDB.sde")
     temp_fgdb = os.path.join(fgdb_folder, "Data/Attributor.gdb")
 
     # Environment
     arcpy.env.overwriteOutput = True
-    spatial_reference = arcpy.SpatialReference(3436)
     arcpy.env.workspace = temp_fgdb
 
     # Feature Datasets
-    sewer = os.path.join(temp_fgdb, "SewerStormwater")
-    storm = os.path.join(temp_fgdb, "Stormwater")
+    sewer = os.path.join(sde, "SewerStormwater")
+    storm = os.path.join(sde, "Stormwater")
+    engineering = os.path.join(sde, "SewerEngineering")
 
     # Feature Classes - Sewer Stormwater
     sewer_main = os.path.join(sewer, "ssGravityMain")
     sewer_manhole = os.path.join(sewer, "ssManhole")
     sewer_cleanout = os.path.join(sewer, "ssCleanout")
     sewer_inlet = os.path.join(sewer, "ssInlet")
-    sewer_fitting = os.path.join(sewer, "ssFitting")
 
     # Feature Classes - Storm
     storm_main = os.path.join(storm, "swGravityMain")
@@ -137,13 +138,15 @@ def Attributor():
     storm_discharge = os.path.join(storm, "swDischargePoint")
     storm_culvert = os.path.join(storm, "swCulvert")
 
+    # Feature Class - GPS Points
+    gps_points = os.path.join(engineering, "gpsNode")
+
     # List of feature classes for looping
     # [0] = feature class, [1] = point/line
-    sewer_assets = [[sewer_main, "point"],
+    sewer_assets = [[sewer_main, "line"],
                     [sewer_manhole, "point"],
                     [sewer_cleanout, "point"],
-                    [sewer_inlet, "point"],
-                    [sewer_fitting, "point"]]
+                    [sewer_inlet, "point"]]
 
     storm_assets = [[storm_main, "line"],
                     [storm_manhole, "point"],
@@ -153,7 +156,7 @@ def Attributor():
                     [storm_culvert, "line"]]
 
     # Expressions
-    spatial_start = "str(int(!NAD83XSTART!))[2:4] + str(int(!NAD83YSTART!))[2:4] + '-' + str(int(!NAD83XSTART!))[4] + str(int(!NAD83YSTART!))[4] + '-' + str(int(!NAD83XSTART!)"
+    spatial_start = "str(int(!NAD83XSTART!))[2:4] + str(int(!NAD83YSTART!))[2:4] + '-' + str(int(!NAD83XSTART!))[4] + str(int(!NAD83YSTART!))[4] + '-' + str(int(!NAD83XSTART!))[-2:]"
     spatial_end = "str(int(!NAD83XEND!))[2:4] + str(int(!NAD83YEND!))[2:4] + '-' + str(int(!NAD83XEND!))[4] + str(int(!NAD83YEND!))[4] + '-' + str(int(!NAD83XEND!))[-2:] + str(int(!NAD83YEND!))[-2:]"
     spatial_id_line_sewer = "!SPATAILSTART! + '_' + !SPATAILEND!"  # Yes it's seriously misspelled
     spatial_id_line_storm = "!SPATIALSTART! + '_' + !SPATIALEND!"
@@ -170,15 +173,18 @@ def Attributor():
                 arcpy.CalculateGeometryAttributes_management("asset_temp", [["NAD83XSTART", "LINE_START_X"],
                                                                             ["NAD83YSTART", "LINE_START_Y"],
                                                                             ["NAD83XEND", "LINE_END_X"],
-                                                                            ["NAD83YEND", "LINE_END_Y"]], spatial_reference)
-                arcpy.CalculateFields_management("asset_temp", "PYTHON3", [["SPATIALSTART", spatial_start],
-                                                                           ["SPATIALEND", spatial_end],
-                                                                           ["SPATIAL_ID", spatial_id_line_sewer]])
-            elif asset[0] == "point":
+                                                                            ["NAD83YEND", "LINE_END_Y"]])
+                arcpy.CalculateFields_management("asset_temp", "PYTHON3", [["SPATAILSTART", spatial_start],
+                                                                           ["SPATAILEND", spatial_end],
+                                                                           ["SPATIALID", spatial_id_line_sewer]])
+            elif asset[1] == "point":
                 arcpy.CalculateGeometryAttributes_management("asset_temp", [["NAD83X", "POINT_X"],
-                                                                            ["NAD83Y", "POINT_Y"]], spatial_reference)
-                arcpy.CalculateFields_management("asset_temp", "PYTHON3", [["SPATIALID", spatial_id_point],
-                                                                           ["FACILITYID", spatial_id_point]])
+                                                                            ["NAD83Y", "POINT_Y"]])
+                arcpy.CalculateFields_management("asset_temp", "PYTHON3", [["SPATIALID", spatial_id_point]])
+            else:
+                pass
+
+            arcpy.Delete_management("asset_temp")
 
     def storm_attribution():
 
@@ -191,20 +197,85 @@ def Attributor():
                 arcpy.CalculateGeometryAttributes_management("asset_temp", [["NAD83XSTART", "LINE_START_X"],
                                                                             ["NAD83YSTART", "LINE_START_Y"],
                                                                             ["NAD83XEND", "LINE_END_X"],
-                                                                            ["NAD83YEND", "LINE_END_Y"]], spatial_reference)
+                                                                            ["NAD83YEND", "LINE_END_Y"]])
                 arcpy.CalculateFields_management("asset_temp", "PYTHON3", [["SPATIALSTART", spatial_start],
                                                                            ["SPATIALEND", spatial_end],
                                                                            ["SPATIALID", spatial_id_line_storm],
                                                                            ["FACILITYID", spatial_id_line_storm]])
             elif asset[1] == "point":
                 arcpy.CalculateGeometryAttributes_management("asset_temp", [["NAD83X", "POINT_X"],
-                                                                            ["NAD83Y", "POINT_Y"]], spatial_reference)
+                                                                            ["NAD83Y", "POINT_Y"]])
                 arcpy.CalculateFields_management("asset_temp", "PYTHON3", [["SPATIALID", spatial_id_point],
                                                                            ["FACILITYID", spatial_id_point]])
+            else:
+                pass
+
+            arcpy.Delete_management("asset_temp")
+
+    def gps_attribution():
+
+        # Paths
+        shape_folder = "Y:\\"
+
+        # Grab last updated date from a text file, define a date format to use
+        f = open("last_updated.txt", "r")
+        last_updated = [f.read()]
+        datetime_format = "%Y-%m-%d"
+
+        # Empty lists to write folders to
+        folder_list = []
+
+        # Using os.walk, append folders to folder_list if the folder name has a dash and no letters, period, or spaces.
+        for root, dirs, files in os.walk(shape_folder, topdown=False):
+            [folder_list.append(name) for name in dirs if re.search("[-]", name) and not re.search("[a-zA-z. ]", name) and
+             datetime.datetime.strptime(last_updated[0], datetime_format) < datetime.datetime.strptime(name, datetime_format)]  # Add any folder without a letter in it
+
+        # If the list is not empty, select files in each folder that end in " insMACP.shp" and append them to SewerEngineering/gpsNodes
+        if len(folder_list) > 0:
+            for folder in folder_list:
+                directory = os.path.join(shape_folder, folder)
+                for file in os.listdir(directory):
+                    file_path = os.path.join(directory, file)
+                    if file.endswith("insMACP.shp"):
+                        arcpy.Append_management(file_path, gps_points, "NO_TEST",
+                                                fr'SPATIALID "Spatial Identifier" true true false 20 Text 0 0,First,#;'
+                                                fr'NAD83X "Easting (X)" true true false 8 Double 8 38,First,#,{file_path},Easting,-1,-1;'
+                                                fr'NAD83Y "Northing (Y)" true true false 8 Double 8 38,First,#,{file_path},Northing,-1,-1;'
+                                                fr'NAVD88Z "Elevation" true true false 8 Double 8 38,First,#,{file_path},Elevation,-1,-1;'
+                                                fr'GlobalID "GlobalID" false false true 38 GlobalID 0 0,First,#;'
+                                                fr'INSSTATUS "Inspection Status" true true false 2 Text 0 0,First,#,{file_path},INSSTATUS,0,2;'
+                                                fr'INSPECTOR "Surveyed By" true true false 50 Text 0 0,First,#,{file_path},INSPECTOR,0,13;'
+                                                fr'INSSTART "Date" true true false 8 Date 0 0,First,#{file_path},INSSTART,-1,-1;'
+                                                fr'INSTIME "Time" true true false 8 Date 0 0,First,#,{file_path},INSTIME,0,11;'
+                                                fr'LOCDESC "Location Details" true true false 50 Text 0 0,First,#,{file_path},LOCDESC,0,11;'
+                                                fr'RIMTOGRADE "Rim to Grade" true true false 8 Double 8 38,First,#;'
+                                                fr'WATERTYPE "MH Use" true true false 50 Text 0 0,First,#,{file_path},WATERTYPE,0,2;'
+                                                fr'ACCESSTYPE "Access Type" true true false 10 Text 0 0,First,#,{file_path},ACCESSTYPE,0,3;'
+                                                fr'DIM1 "Dimension 1" true true false 8 Double 8 38,First,#;'
+                                                fr'DIM2 "Dimension 2" true true false 8 Double 8 38,First,#;'
+                                                fr'CVSHAPE "Cover Shape" true true false 5 Text 0 0,First,#,{file_path},CVSHAPE,0,1;'
+                                                fr'CVMATL "Cover Material" true true false 10 Text 0 0,First,#,{file_path},CVMATL,0,3;'
+                                                fr'CVTYPE "Cover Type" true true false 25 Text 0 0,First,#,{file_path},CVTYPE,0,5;'
+                                                fr'CVFIT "Cover Frame Fit" true true false 5 Text 0 0,First,#;'
+                                                fr'CVCOND "Cover Condition" true true false 10 Text 0 0,First,#;'
+                                                fr'COMMENTS "Additional Info" true true false 100 Text 0 0,First,#,{file_path},COMMENTS,0,18;'
+                                                fr'GEOID "GEOID" true true false 20 Text 0 0,First,#', '', '')
+
+            # Calculate spatial identifier for gpsNode
+            arcpy.CalculateField_management(gps_points, "SPATIALID", spatial_id_point, "PYTHON3")
+
+            # Update last_update.txt to show new date. Next time this runs it will compare folder names to the date this last ran. To work you MUST close the file after writing
+            new_date = datetime.datetime.now().strftime(datetime_format)
+            f = open("last_updated.txt", "w")
+            f.write(f"{new_date}")
+            f.close()
+        else:
+            pass
 
     # Run nested functions
     sewer_attribution()
     storm_attribution()
+    gps_attribution()
 
 
 def main():
@@ -222,7 +293,7 @@ def main():
 
         # Get logging going
         logger = start_rotating_logging(log_path=log_file,
-                                        max_bytes=100000,
+                                        max_bytes=10000000,
                                         backup_count=2,
                                         suppress_requests_messages=True)
         logger.info("")
