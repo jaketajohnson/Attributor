@@ -156,11 +156,12 @@ def Attributor():
                     [storm_culvert, "line"]]
 
     # Expressions
-    spatial_start = "str(int(!NAD83XSTART!))[2:4] + str(int(!NAD83YSTART!))[2:4] + '-' + str(int(!NAD83XSTART!))[4] + str(int(!NAD83YSTART!))[4] + '-' + str(int(!NAD83XSTART!))[-2:]"
+    spatial_start = "str(int(!NAD83XSTART!))[2:4] + str(int(!NAD83YSTART!))[2:4] + '-' + str(int(!NAD83XSTART!))[4] + str(int(!NAD83YSTART!))[4] + '-' + str(int(!NAD83XSTART!))[-2:] + str(int(!NAD83YSTART!))[-2:]"
     spatial_end = "str(int(!NAD83XEND!))[2:4] + str(int(!NAD83YEND!))[2:4] + '-' + str(int(!NAD83XEND!))[4] + str(int(!NAD83YEND!))[4] + '-' + str(int(!NAD83XEND!))[-2:] + str(int(!NAD83YEND!))[-2:]"
     spatial_id_line_sewer = "!SPATAILSTART! + '_' + !SPATAILEND!"  # Yes it's seriously misspelled
     spatial_id_line_storm = "!SPATIALSTART! + '_' + !SPATIALEND!"
     spatial_id_point = "str(int(!NAD83X!))[2:4] + str(int(!NAD83Y!))[2:4] + '-' + str(int(!NAD83X!))[4] + str(int(!NAD83Y!))[4] + '-' + str(int(!NAD83X!))[-2:] + str(int(!NAD83Y!))[-2:]"
+    sewer_stormwater_selection = "WATERTYPE = 'SW' And FACILITYID IS NULL"
 
     def sewer_attribution():
 
@@ -177,14 +178,39 @@ def Attributor():
                 arcpy.CalculateFields_management("asset_temp", "PYTHON3", [["SPATAILSTART", spatial_start],
                                                                            ["SPATAILEND", spatial_end],
                                                                            ["SPATIALID", spatial_id_line_sewer]])
+
+                # Calculate Facility ID of assets if there are more than zero stormwater (combined) assets selected
+                sewer_stormwater = arcpy.SelectLayerByAttribute_management(asset[0], "NEW_SELECTION", sewer_stormwater_selection)
+
+                if int(arcpy.GetCount_management(sewer_stormwater).getOutput(0)) > 0:
+                    arcpy.CalculateField_management(sewer_stormwater, "FACILITYID", spatial_id_line_sewer, "PYTHON3")
+                else:
+                    pass
+
             elif asset[1] == "point":
                 arcpy.CalculateGeometryAttributes_management("asset_temp", [["NAD83X", "POINT_X"],
                                                                             ["NAD83Y", "POINT_Y"]])
                 arcpy.CalculateFields_management("asset_temp", "PYTHON3", [["SPATIALID", spatial_id_point]])
+
+                # Calculate Facility ID of assets if there are more than zero stormwater (combined) assets selected
+                # Only sewer_inlet and sewer_manhole need to have Facility ID calculated for type points. Others do not need a Facility ID
+                if asset[0] == sewer_inlet:
+                    sewer_stormwater = arcpy.SelectLayerByAttribute_management(asset[0], "NEW_SELECTION", "FACILITYID IS NULL")
+
+                    if int(arcpy.GetCount_management(sewer_stormwater).getOutput(0)) > 0:
+                        arcpy.CalculateField_management(sewer_stormwater, "FACILITYID", spatial_id_point, "PYTHON3")
+                    else:
+                        pass
+
+                elif asset[0] == sewer_manhole:
+                    sewer_stormwater = arcpy.SelectLayerByAttribute_management(asset[0], "NEW_SELECTION", sewer_stormwater_selection)
+
+                    if int(arcpy.GetCount_management(sewer_stormwater).getOutput(0)) > 0:
+                        arcpy.CalculateField_management(sewer_stormwater, "FACILITYID", spatial_id_point, "PYTHON3")
+                    else:
+                        pass
             else:
                 pass
-
-            arcpy.Delete_management("asset_temp")
 
     def storm_attribution():
 
@@ -210,14 +236,12 @@ def Attributor():
             else:
                 pass
 
-            arcpy.Delete_management("asset_temp")
-
     def gps_attribution():
 
         # Paths
         shape_folder = "Y:\\"
 
-        # Grab last updated date from a text file, define a date format to use
+        # Grab last updated date from a text file, define a date format to use (YYYY-mm-dd)
         f = open("last_updated.txt", "r")
         last_updated = [f.read()]
         datetime_format = "%Y-%m-%d"
