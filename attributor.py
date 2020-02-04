@@ -161,13 +161,27 @@ def Attributor():
     spatial_id_line_sewer = "!SPATAILSTART! + '_' + !SPATAILEND!"  # Yes it's seriously misspelled
     spatial_id_line_storm = "!SPATIALSTART! + '_' + !SPATIALEND!"
     spatial_id_point = "str(int(!NAD83X!))[2:4] + str(int(!NAD83Y!))[2:4] + '-' + str(int(!NAD83X!))[4] + str(int(!NAD83Y!))[4] + '-' + str(int(!NAD83X!))[-2:] + str(int(!NAD83Y!))[-2:]"
-    sewer_stormwater_selection = "WATERTYPE = 'SW' And FACILITYID IS NULL"
+
+    # Special case expressions
+    sewer_stormwater_storm = "WATERTYPE = 'SW' And FACILITYID IS NULL"
+    sewer_stormwater_storm_inlet = "FACILITYID IS NULL"
+    sewer_stormwater_private = "OWNEDBY = -2 And FACILITYID IS NULL"
+
+    def facility_id_exceptions(asset, filter_selection):
+        # Template for calculating FACILITYID under special cases
+        # asset is always asset[0] and filter_selection is the selection expression placed above
+        # Used in case of storm water type in sewer stormwater or private sewers for example
+        selection = arcpy.SelectLayerByAttribute_management(asset, "NEW_SELECTION", filter_selection)
+        if int(arcpy.GetCount_management(selection).getOutput(0)) > 0:
+            arcpy.CalculateField_management(selection, "FACILITYID", "!SPATIALID!", "PYTHON3")
+        else:
+            pass
 
     def sewer_attribution():
 
         for asset in sewer_assets:
 
-            # Make a temp feature layer then calculate fields depending on if asset is a point or a line
+            # Make a temp feature layer then calculate fields depending on if asset is a point or a line via asset[1]
             arcpy.MakeFeatureLayer_management(asset[0], "asset_temp")
 
             if asset[1] == "line":
@@ -178,37 +192,23 @@ def Attributor():
                 arcpy.CalculateFields_management("asset_temp", "PYTHON3", [["SPATAILSTART", spatial_start],
                                                                            ["SPATAILEND", spatial_end],
                                                                            ["SPATIALID", spatial_id_line_sewer]])
-
-                # Calculate Facility ID of assets if there are more than zero stormwater (combined) assets selected
-                sewer_stormwater = arcpy.SelectLayerByAttribute_management(asset[0], "NEW_SELECTION", sewer_stormwater_selection)
-
-                if int(arcpy.GetCount_management(sewer_stormwater).getOutput(0)) > 0:
-                    arcpy.CalculateField_management(sewer_stormwater, "FACILITYID", spatial_id_line_sewer, "PYTHON3")
-                else:
-                    pass
+                facility_id_exceptions(asset[0], sewer_stormwater_storm)
+                facility_id_exceptions(asset[0], sewer_stormwater_private)
 
             elif asset[1] == "point":
                 arcpy.CalculateGeometryAttributes_management("asset_temp", [["NAD83X", "POINT_X"],
                                                                             ["NAD83Y", "POINT_Y"]])
                 arcpy.CalculateFields_management("asset_temp", "PYTHON3", [["SPATIALID", spatial_id_point]])
 
-                # Calculate Facility ID of assets if there are more than zero stormwater (combined) assets selected
                 # Only sewer_inlet and sewer_manhole need to have Facility ID calculated for type points. Others do not need a Facility ID
-                if asset[0] == sewer_inlet:
-                    sewer_stormwater = arcpy.SelectLayerByAttribute_management(asset[0], "NEW_SELECTION", "FACILITYID IS NULL")
+                if asset[0] == sewer_manhole:
+                    facility_id_exceptions(asset[0], sewer_stormwater_storm)
+                    facility_id_exceptions(asset[0], sewer_stormwater_private)
+                elif asset[0] == sewer_inlet:
+                    arcpy.CalculateField_management(asset[0], "FACILITYID", "!SPATIALID!", "PYTHON3")
+                elif asset[0] == sewer_cleanout:
+                    facility_id_exceptions(asset[0], sewer_stormwater_private)
 
-                    if int(arcpy.GetCount_management(sewer_stormwater).getOutput(0)) > 0:
-                        arcpy.CalculateField_management(sewer_stormwater, "FACILITYID", spatial_id_point, "PYTHON3")
-                    else:
-                        pass
-
-                elif asset[0] == sewer_manhole:
-                    sewer_stormwater = arcpy.SelectLayerByAttribute_management(asset[0], "NEW_SELECTION", sewer_stormwater_selection)
-
-                    if int(arcpy.GetCount_management(sewer_stormwater).getOutput(0)) > 0:
-                        arcpy.CalculateField_management(sewer_stormwater, "FACILITYID", spatial_id_point, "PYTHON3")
-                    else:
-                        pass
             else:
                 pass
 
