@@ -1,11 +1,11 @@
 """
  SYNOPSIS
 
-     SnowLines.py
+     Attributor
 
  DESCRIPTION
 
-     This script performs RouteStats and SnowLines processing
+     This script attributes sewer/stormwater tables
 
  REQUIREMENTS
 
@@ -164,7 +164,7 @@ def Attributor():
 
     # Special case expressions
     sewer_stormwater_storm = "WATERTYPE = 'SW' And FACILITYID IS NULL"
-    sewer_stormwater_storm_inlet = "FACILITYID IS NULL"
+    # sewer_stormwater_storm_inlet = "FACILITYID IS NULL"
     sewer_stormwater_private = "OWNEDBY = -2 And FACILITYID IS NULL"
 
     def facility_id_exceptions(asset, filter_selection):
@@ -211,7 +211,7 @@ def Attributor():
 
             else:
                 pass
-
+            
     def storm_attribution():
 
         for asset in storm_assets:
@@ -296,10 +296,40 @@ def Attributor():
         else:
             pass
 
+    def ward_attribution():
+
+        # Paths
+        area = os.path.join(temp_fgdb, "AdministrativeArea")  # Townships and wards polygons
+
+        # Lists where OBJECTID and field values will be saved
+        area_list = []
+
+        # Iterates through Administrative Area and adds the OBJECTID and Label to the list in the form of tuples
+        with arcpy.da.SearchCursor(area, ["OID@", "Label"]) as cursor:
+            for row in cursor:
+                area_list.append(tuple((row[0], row[1])))
+
+        # Uses the list of attributes, in the form of tuples, to calculate sewer_mains that are spatially coincident
+        for pair in area_list:
+
+            # Select areas one by one based off the OID stored in area_list, then select sewer_mains inside that polygon
+            selection = arcpy.SelectLayerByAttribute_management(area, "NEW_SELECTION", fr"OBJECTID = {pair[0]}")
+            arcpy.SelectLayerByLocation_management(sewer_main, "HAVE_THEIR_CENTER_IN", selection, None, "NEW_SELECTION")
+
+            # Expression to modify the label with Springfield (label) if the label contains "Ward"
+            if re.search(fr"\bWard\b", str(pair[1])):
+                city = fr"'Springfield ({pair[1]})'"
+            else:
+                city = fr"'{pair[1]}'"
+
+            # Add in the label
+            arcpy.CalculateField_management(sewer_main, "GXPCity", city, "PYTHON3")
+
     # Run nested functions
     sewer_attribution()
     storm_attribution()
     gps_attribution()
+    ward_attribution()
 
 
 def main():
@@ -317,8 +347,8 @@ def main():
 
         # Get logging going
         logger = start_rotating_logging(log_path=log_file,
-                                        max_bytes=10000000,
-                                        backup_count=2,
+                                        max_bytes=500000,
+                                        backup_count=1,
                                         suppress_requests_messages=True)
         logger.info("")
         logger.info("--- Script Execution Started ---")
