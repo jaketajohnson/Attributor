@@ -85,29 +85,6 @@ def start_rotating_logging(log_path=None,
     return the_logger
 
 
-def is_valid_path(parser, path):
-    """
-    Check to see if a provided path is valid.  Works with argparse
-
-    Parameters
-    ----------
-    parser : argparse.ArgumentParser
-        The argument parser object
-    path : str
-        The path to evaluate whether it exists or not
-
-    Returns
-    ----------
-    path : str
-        If the path exists, it is returned  if not, a
-        parser.error is raised.
-    """
-    if not os.path.exists(path):
-        parser.error("The path {0} does not exist!".format(path))
-    else:
-        return path
-
-
 def Attributor():
 
     # Paths
@@ -119,42 +96,6 @@ def Attributor():
     arcpy.env.overwriteOutput = True
     arcpy.env.workspace = r"memory\tempData"
 
-    # Feature Datasets
-    sewer = os.path.join(sde, "SewerStormwater")
-    storm = os.path.join(sde, "Stormwater")
-    engineering = os.path.join(sde, "SewerEngineering")
-
-    # Feature Classes - Sewer Stormwater
-    sewer_main = os.path.join(sewer, "ssGravityMain")
-    sewer_manhole = os.path.join(sewer, "ssManhole")
-    sewer_cleanout = os.path.join(sewer, "ssCleanout")
-    sewer_inlet = os.path.join(sewer, "ssInlet")
-
-    # Feature Classes - Storm
-    storm_main = os.path.join(storm, "swGravityMain")
-    storm_manhole = os.path.join(storm, "swManhole")
-    storm_cleanout = os.path.join(storm, "swCleanout")
-    storm_inlet = os.path.join(storm, "swInlet")
-    storm_discharge = os.path.join(storm, "swDischargePoint")
-    storm_culvert = os.path.join(storm, "swCulvert")
-
-    # Feature Class - GPS Points
-    gps_points = os.path.join(engineering, "gpsNode")
-
-    # List of feature classes for looping
-    # [0] = feature class, [1] = point/line
-    sewer_assets = [[sewer_main, "line"],
-                    [sewer_manhole, "point"],
-                    [sewer_cleanout, "point"],
-                    [sewer_inlet, "point"]]
-
-    storm_assets = [[storm_main, "line"],
-                    [storm_manhole, "point"],
-                    [storm_cleanout, "point"],
-                    [storm_inlet, "point"],
-                    [storm_discharge, "point"],
-                    [storm_culvert, "line"]]
-
     # Expressions
     spatial_start = "str(int(!NAD83XSTART!))[2:4] + str(int(!NAD83YSTART!))[2:4] + '-' + str(int(!NAD83XSTART!))[4] + str(int(!NAD83YSTART!))[4] + '-' + str(int(!NAD83XSTART!))[-2:] + str(int(!NAD83YSTART!))[-2:]"
     spatial_end = "str(int(!NAD83XEND!))[2:4] + str(int(!NAD83YEND!))[2:4] + '-' + str(int(!NAD83XEND!))[4] + str(int(!NAD83YEND!))[4] + '-' + str(int(!NAD83XEND!))[-2:] + str(int(!NAD83YEND!))[-2:]"
@@ -164,7 +105,6 @@ def Attributor():
 
     # Special case expressions
     sewer_stormwater_storm = "WATERTYPE = 'SW' And FACILITYID IS NULL"
-    # sewer_stormwater_storm_inlet = "FACILITYID IS NULL"
     sewer_stormwater_private = "OWNEDBY = -2 And FACILITYID IS NULL"
 
     def facility_id_exceptions(asset, filter_selection):
@@ -177,6 +117,18 @@ def Attributor():
             pass
 
     def sewer_attribution():
+
+        # Feature Classes
+        sewer = os.path.join(sde, "SewerStormwater")
+        sewer_main = os.path.join(sewer, "ssGravityMain")
+        sewer_manhole = os.path.join(sewer, "ssManhole")
+        sewer_cleanout = os.path.join(sewer, "ssCleanout")
+        sewer_inlet = os.path.join(sewer, "ssInlet")
+
+        sewer_assets = [[sewer_main, "line"],
+                        [sewer_manhole, "point"],
+                        [sewer_cleanout, "point"],
+                        [sewer_inlet, "point"]]
 
         for asset in sewer_assets:
 
@@ -197,7 +149,7 @@ def Attributor():
             elif asset[1] == "point":
                 arcpy.CalculateGeometryAttributes_management("asset_temp", [["NAD83X", "POINT_X"],
                                                                             ["NAD83Y", "POINT_Y"]])
-                arcpy.CalculateFields_management("asset_temp", "PYTHON3", [["SPATIALID", spatial_id_point]])
+                arcpy.CalculateField_management("asset_temp", "SPATIALID", spatial_id_point, "PYTHON3")
 
                 # Only sewer_inlet and sewer_manhole need to have Facility ID calculated for type points
                 if asset[0] == sewer_manhole:
@@ -212,6 +164,22 @@ def Attributor():
                 pass
 
     def storm_attribution():
+
+        # Feature Classes
+        storm = os.path.join(sde, "Stormwater")
+        storm_main = os.path.join(storm, "swGravityMain")
+        storm_manhole = os.path.join(storm, "swManhole")
+        storm_cleanout = os.path.join(storm, "swCleanout")
+        storm_inlet = os.path.join(storm, "swInlet")
+        storm_discharge = os.path.join(storm, "swDischargePoint")
+        storm_culvert = os.path.join(storm, "swCulvert")
+
+        storm_assets = [[storm_main, "line"],
+                        [storm_manhole, "point"],
+                        [storm_cleanout, "point"],
+                        [storm_inlet, "point"],
+                        [storm_discharge, "point"],
+                        [storm_culvert, "line"]]
 
         for asset in storm_assets:
 
@@ -236,6 +204,10 @@ def Attributor():
                 pass
 
     def gps_attribution():
+
+        # Feature Classes
+        engineering = os.path.join(sde, "SewerEngineering")
+        gps_points = os.path.join(engineering, "gpsNode")
 
         # Paths
         shape_folder = "Y:\\"
@@ -292,6 +264,10 @@ def Attributor():
             pass
 
     def ward_attribution():
+
+        # Feature Classes
+        sewer = os.path.join(sde, "SewerStormwater")
+        sewer_main = os.path.join(sewer, "ssGravityMain")
 
         # Paths
         area = os.path.join(temp_fgdb, "AdministrativeArea")  # Townships and wards polygons
