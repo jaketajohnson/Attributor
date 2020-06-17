@@ -273,13 +273,13 @@ def Attributor():
         logger.info("")
         logger.info("--- Script Execution Started ---")
 
-        '''logger.info("--- --- Sewer Attribution Start")
+        logger.info("--- --- Sewer Attribution Start")
         sewer_attribution()
         logger.info("--- --- Sewer Attribution Complete")
 
         logger.info("--- --- Storm Attribution Start")
         storm_attribution()
-        logger.info("--- --- Storm Attribution Complete")'''
+        logger.info("--- --- Storm Attribution Complete")
 
         logger.info("--- --- GPS Attribution Start")
         gps_attribution()
