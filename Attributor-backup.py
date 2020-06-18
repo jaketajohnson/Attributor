@@ -5,7 +5,9 @@
 
  DESCRIPTION
 
-     This script attributes sewer/stormwater tables
+    * Attributes the spatial and facility identifiers for the sewer and stormwater tables
+    * Calculates the GXPCity field for sewer gravity mains by finding only gravity mains in that ward polygon
+    * Appends new GPS points from the Y: drive and calculates a spatial identifier
 
  REQUIREMENTS
 
@@ -23,50 +25,25 @@ import re
 from logging.handlers import RotatingFileHandler
 
 
-def start_rotating_logging(log_path=None,
-                           max_bytes=100000,
-                           backup_count=2,
-                           suppress_requests_messages=True):
-    """
-    This function starts logging with a rotating file handler.  If no log
-    path is provided it will start logging in the same folder as the script,
-    with the same name as the script.
+def start_rotating_logging(log_file=None, max_bytes=100000, backup_count=1, suppress_requests_messages=True):
 
-    Parameters
-    ----------
-    log_path : str
-        the path to use in creating the log file
-    max_bytes : int
-        the maximum number of bytes to use in each log file
-    backup_count : int
-        the number of backup files to create
-    suppress_requests_messages : bool
-        If True, then SSL warnings from the requests and urllib3
-        modules will be suppressed
+    formatter = logging.Formatter(fmt="%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
 
-    Returns
-    -------
-    the_logger : logging.logger
-        the logger object, ready to use
-    """
-    formatter = logging.Formatter(fmt="%(asctime)s - %(levelname)s - %(message)s",
-                                  datefmt="%Y-%m-%d %H:%M:%S")
-
-    # If no log path was provided, construct one
-    script_path = sys.argv[0]
-    script_folder = os.path.dirname(script_path)
-    script_name = os.path.splitext(os.path.basename(script_path))[0]
-    if not log_path:
-        log_path = os.path.join(script_folder, "{}.log".format(script_name))
+    # Paths to desired log file
+    scripts_root = r"C:\Scripts"
+    script_name = os.path.splitext(os.path.basename(scripts_root))[0]
+    script_name_no_ext = os.path.splitext(os.path.basename(sys.argv[0]))[0]
+    script_folder = os.path.join(scripts_root, script_name_no_ext)
+    log_folder = os.path.join(script_folder, "Log_Files")
+    if not log_file:
+        log_file = os.path.join(log_folder, f"{script_name_no_ext}.log")
 
     # Start logging
     the_logger = logging.getLogger(script_name)
     the_logger.setLevel(logging.DEBUG)
 
     # Add the rotating file handler
-    log_handler = RotatingFileHandler(filename=log_path,
-                                      maxBytes=max_bytes,
-                                      backupCount=backup_count)
+    log_handler = RotatingFileHandler(filename=log_file, maxBytes=max_bytes, backupCount=backup_count)
     log_handler.setLevel(logging.DEBUG)
     log_handler.setFormatter(formatter)
     the_logger.addHandler(log_handler)
@@ -125,10 +102,10 @@ def Attributor():
         sewer_cleanout = os.path.join(sewer, "ssCleanout")
         sewer_inlet = os.path.join(sewer, "ssInlet")
 
-        sewer_assets = [[sewer_main, "line"],
-                        [sewer_manhole, "point"],
-                        [sewer_cleanout, "point"],
-                        [sewer_inlet, "point"]]
+        sewer_assets = [[sewer_main, "line", "Sewer Mains"],
+                        [sewer_manhole, "point", "Sewer Manholes"],
+                        [sewer_cleanout, "point", "Sewer Cleanouts"],
+                        [sewer_inlet, "point", "Sewer Inlets"]]
 
         for asset in sewer_assets:
 
@@ -136,6 +113,7 @@ def Attributor():
             arcpy.MakeFeatureLayer_management(asset[0], "asset_temp")
 
             if asset[1] == "line":
+                logger.info(f"--- --- {asset[2]} Start")
                 arcpy.CalculateGeometryAttributes_management("asset_temp", [["NAD83XSTART", "LINE_START_X"],
                                                                             ["NAD83YSTART", "LINE_START_Y"],
                                                                             ["NAD83XEND", "LINE_END_X"],
@@ -145,8 +123,10 @@ def Attributor():
                                                                            ["SPATIALID", spatial_id_line_sewer]])
                 facility_id_exceptions(asset[0], sewer_stormwater_storm)
                 facility_id_exceptions(asset[0], sewer_stormwater_private)
+                logger.info(f"--- --- {asset[2]} Complete")
 
             elif asset[1] == "point":
+                logger.info(f"--- --- {asset[2]} Start")
                 arcpy.CalculateGeometryAttributes_management("asset_temp", [["NAD83X", "POINT_X"],
                                                                             ["NAD83Y", "POINT_Y"]])
                 arcpy.CalculateField_management("asset_temp", "SPATIALID", spatial_id_point, "PYTHON3")
@@ -159,6 +139,7 @@ def Attributor():
                     arcpy.CalculateField_management(asset[0], "FACILITYID", "!SPATIALID!", "PYTHON3")
                 elif asset[0] == sewer_cleanout:
                     facility_id_exceptions(asset[0], sewer_stormwater_private)
+                logger.info(f"--- --- {asset[2]} Complete")
 
             else:
                 pass
@@ -174,12 +155,12 @@ def Attributor():
         storm_discharge = os.path.join(storm, "swDischargePoint")
         storm_culvert = os.path.join(storm, "swCulvert")
 
-        storm_assets = [[storm_main, "line"],
-                        [storm_manhole, "point"],
-                        [storm_cleanout, "point"],
-                        [storm_inlet, "point"],
-                        [storm_discharge, "point"],
-                        [storm_culvert, "line"]]
+        storm_assets = [[storm_main, "line", "Storm Mains"],
+                        [storm_manhole, "point", "Storm Manholes"],
+                        [storm_cleanout, "point", "Storm Cleanouts"],
+                        [storm_inlet, "point", "Storm Inlets"],
+                        [storm_discharge, "point", "Storm Discharge Points"],
+                        [storm_culvert, "line", "Storm Culverts"]]
 
         for asset in storm_assets:
 
@@ -187,6 +168,7 @@ def Attributor():
             arcpy.MakeFeatureLayer_management(asset[0], "asset_temp")
 
             if asset[1] == "line":
+                logger.info(f"--- --- {asset[2]} Start")
                 arcpy.CalculateGeometryAttributes_management("asset_temp", [["NAD83XSTART", "LINE_START_X"],
                                                                             ["NAD83YSTART", "LINE_START_Y"],
                                                                             ["NAD83XEND", "LINE_END_X"],
@@ -195,11 +177,15 @@ def Attributor():
                                                                            ["SPATIALEND", spatial_end],
                                                                            ["SPATIALID", spatial_id_line_storm],
                                                                            ["FACILITYID", spatial_id_line_storm]])
+                logger.info(f"--- --- {asset[2]} Complete")
+
             elif asset[1] == "point":
+                logger.info(f"--- --- {asset[2]} Start")
                 arcpy.CalculateGeometryAttributes_management("asset_temp", [["NAD83X", "POINT_X"],
                                                                             ["NAD83Y", "POINT_Y"]])
                 arcpy.CalculateFields_management("asset_temp", "PYTHON3", [["SPATIALID", spatial_id_point],
                                                                            ["FACILITYID", spatial_id_point]])
+                logger.info(f"--- --- {asset[2]} Complete")
             else:
                 pass
 
@@ -288,51 +274,56 @@ def Attributor():
                 arcpy.CalculateField_management(sewer_selection, 'GXPCity', f"{city}", 'PYTHON3')
         del cursor
 
-    # Run nested functions
-    sewer_attribution()
-    storm_attribution()
-    gps_attribution()
-    ward_attribution()
-
-
-def main():
-    """
-    Main execution code
-    """
-    # Make a few variables to use
-    # script_folder = os.path.dirname(sys.argv[0])
-    log_file_folder = r"C:\Scripts\Attributor\Log_Files"
+    # Paths to desired log file
+    scripts_root = r"C:\Scripts"
     script_name_no_ext = os.path.splitext(os.path.basename(sys.argv[0]))[0]
-    log_file = os.path.join(log_file_folder, "{}.log".format(script_name_no_ext))
-    logger = None
+    script_folder = os.path.join(scripts_root, script_name_no_ext)
+    log_folder = os.path.join(script_folder, "Log_Files")
+    log_file = os.path.join(log_folder, f"{script_name_no_ext}.log")
+    logger = start_rotating_logging(log_file, 100000, 1, True)
 
+    # Run the above functions with logger error catching and formatting
     try:
 
-        # Get logging going
-        logger = start_rotating_logging(log_path=log_file,
-                                        max_bytes=500000,
-                                        backup_count=1,
-                                        suppress_requests_messages=True)
         logger.info("")
         logger.info("--- Script Execution Started ---")
 
-        Attributor()
-        logger.info("Completed Attributor processing")
+        logger.info("--- --- --- --- Sewer Attribution Start")
+        sewer_attribution()
+        logger.info("--- --- --- --- Sewer Attribution Complete")
+
+        logger.info("--- --- --- --- Storm Attribution Start")
+        storm_attribution()
+        logger.info("--- --- --- --- Storm Attribution Complete")
+
+        logger.info("--- --- --- --- GPS Attribution Start")
+        gps_attribution()
+        logger.info("--- --- --- --- GPS Attribution Complete")
+
+        logger.info("--- --- --- --- Ward Attribution Start")
+        ward_attribution()
+        logger.info("--- --- --- --- Ward Attribution Complete")
 
     except ValueError as e:
         exc_traceback = sys.exc_info()[2]
-        error_text = 'Line: {0} --- {1}'.format(exc_traceback.tb_lineno, e)
+        error_text = f'Line: {exc_traceback.tb_lineno} --- {e}'
         try:
             logger.error(error_text)
         except NameError:
             print(error_text)
 
-    except (IOError, KeyError, NameError, IndexError, TypeError, UnboundLocalError, arcpy.ExecuteError):
+    except (IOError, KeyError, NameError, IndexError, TypeError, UnboundLocalError):
         tbinfo = traceback.format_exc()
         try:
             logger.error(tbinfo)
         except NameError:
             print(tbinfo)
+
+    except arcpy.ExecuteError:
+        try:
+            logger.error(arcpy.GetMessages(2))
+        except NameError:
+            print(arcpy.GetMessages(2))
 
     finally:
         # Shut down logging
@@ -341,6 +332,10 @@ def main():
             logging.shutdown()
         except NameError:
             pass
+
+
+def main():
+    Attributor()
 
 
 if __name__ == '__main__':
