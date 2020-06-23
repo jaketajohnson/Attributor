@@ -274,6 +274,18 @@ def Attributor():
                 arcpy.CalculateField_management(sewer_selection, 'GXPCity', f"{city}", 'PYTHON3')
         del cursor
 
+    def pond_attribution():
+
+        # Feature Classes
+        storm = os.path.join(sde, "Stormwater Network")
+        detention_areas = os.path.join(storm, "swDetention")
+
+        # Create a facility ID string from the geometry properties
+        facility_id = "str(!SHAPE!.centroid.X)[2:4] + str(!SHAPE!.centroid.Y)[2:4] + '-' + str(!SHAPE!.centroid.X)[4] + str(!SHAPE!.centroid.Y)[4] + '-' + " \
+                      "str(!SHAPE!.centroid.X)[-2:] + str(!SHAPE!.centroid.Y)[-2:]"
+
+        arcpy.CalculateField_management(detention_areas, "FACILITYID", facility_id, "PYTHON3")
+
     # Paths to desired log file
     scripts_root = r"C:\Scripts"
     script_name_no_ext = os.path.splitext(os.path.basename(sys.argv[0]))[0]
@@ -303,6 +315,10 @@ def Attributor():
         logger.info("--- --- --- --- Ward Attribution Start")
         ward_attribution()
         logger.info("--- --- --- --- Ward Attribution Complete")
+
+        logger.info("--- --- --- --- Pond Attribution Start")
+        pond_attribution()
+        logger.info("--- --- --- --- Pond Attribution Complete")
 
     except ValueError as e:
         exc_traceback = sys.exc_info()[2]
