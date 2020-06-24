@@ -101,14 +101,15 @@ def Attributor():
 
         # Paths
         sewer = os.path.join(sde, "SewerStormwater")
-        sewer_main = os.path.join(sewer, "ssGravityMain")
+        # sewer_main = os.path.join(sewer, "ssGravityMain")
         sewer_manhole = os.path.join(sewer, "ssManhole")
         sewer_cleanout = os.path.join(sewer, "ssCleanout")
         sewer_inlet = os.path.join(sewer, "ssInlet")
         sewer_assets = [[sewer_manhole, "point", "Sewer Manholes"],
                         [sewer_cleanout, "point", "Sewer Cleanouts"],
-                        [sewer_inlet, "point", "Sewer Inlets"],
-                        [sewer_main, "line", "Sewer Mains"]]
+                        [sewer_inlet, "point", "Sewer Inlets"]]
+
+        # [sewer_main, "line", "Sewer Mains"]
 
         # Attribution
         for asset in sewer_assets:
@@ -116,7 +117,7 @@ def Attributor():
             arcpy.MakeFeatureLayer_management(asset[0], "asset_temp")
             selection_by_date = arcpy.SelectLayerByAttribute_management("asset_temp", "NEW_SELECTION", f"LASTUPDATE >= '{week_ago}'")
 
-            # Attribution
+            # Looping through the list
             if int(arcpy.GetCount_management(selection_by_date).getOutput(0)) > 0:
                 if asset[1] == "point":
                     arcpy.CalculateGeometryAttributes_management("asset_temp", [["NAD83X", "POINT_X"],
@@ -138,7 +139,6 @@ def Attributor():
                     arcpy.CalculateField_management(selection, "FACILITYID", "!SPATIALID!", "PYTHON3")
                 elif asset[0] == sewer_inlet:
                     arcpy.CalculateField_management(asset[0], "FACILITYID", "!SPATIALID!", "PYTHON3")
-
             logger.info(f"--- --- {asset[2]} Complete")
 
     def storm_attribution():
@@ -166,24 +166,26 @@ def Attributor():
         # Attribution
         for asset in storm_assets:
 
-            # Make a temp feature layer then calculate fields depending on if asset is a point or a line
+            # Looping through the list
             logger.info(f"--- --- {asset[2]} Start")
             arcpy.MakeFeatureLayer_management(asset[0], "asset_temp")
+            selection_by_date = arcpy.SelectLayerByAttribute_management("asset_temp", "NEW_SELECTION", f"LASTUPDATE >= '{week_ago}'")
 
-            if asset[1] == "line":
-                arcpy.CalculateGeometryAttributes_management("asset_temp", [["NAD83XSTART", "LINE_START_X"],
-                                                                            ["NAD83YSTART", "LINE_START_Y"],
-                                                                            ["NAD83XEND", "LINE_END_X"],
-                                                                            ["NAD83YEND", "LINE_END_Y"]])
-                arcpy.CalculateFields_management("asset_temp", "PYTHON3", [["SPATIALSTART", spatial_start],
-                                                                           ["SPATIALEND", spatial_end],
-                                                                           ["SPATIALID", spatial_id_line_storm],
-                                                                           ["FACILITYID", spatial_id_line_storm]])
-            elif asset[1] == "point":
-                arcpy.CalculateGeometryAttributes_management("asset_temp", [["NAD83X", "POINT_X"],
-                                                                            ["NAD83Y", "POINT_Y"]])
-                arcpy.CalculateFields_management("asset_temp", "PYTHON3", [["SPATIALID", spatial_id_point],
-                                                                           ["FACILITYID", spatial_id_point]])
+            if int(arcpy.GetCount_management(selection_by_date).getOutput(0)) > 0:
+                if asset[1] == "line":
+                    arcpy.CalculateGeometryAttributes_management("asset_temp", [["NAD83XSTART", "LINE_START_X"],
+                                                                                ["NAD83YSTART", "LINE_START_Y"],
+                                                                                ["NAD83XEND", "LINE_END_X"],
+                                                                                ["NAD83YEND", "LINE_END_Y"]])
+                    arcpy.CalculateFields_management("asset_temp", "PYTHON3", [["SPATIALSTART", spatial_start],
+                                                                               ["SPATIALEND", spatial_end],
+                                                                               ["SPATIALID", spatial_id_line_storm],
+                                                                               ["FACILITYID", spatial_id_line_storm]])
+                elif asset[1] == "point":
+                    arcpy.CalculateGeometryAttributes_management("asset_temp", [["NAD83X", "POINT_X"],
+                                                                                ["NAD83Y", "POINT_Y"]])
+                    arcpy.CalculateFields_management("asset_temp", "PYTHON3", [["SPATIALID", spatial_id_point],
+                                                                               ["FACILITYID", spatial_id_point]])
             logger.info(f"--- --- {asset[2]} Complete")
 
     def gps_attribution():
@@ -265,7 +267,7 @@ def Attributor():
                     city = f"'{row[1]}'"
                 selection = arcpy.SelectLayerByAttribute_management(area, "NEW_SELECTION", fr"OBJECTID = {row[0]}")
                 sewer_selection = arcpy.SelectLayerByLocation_management(sewer_main, "HAVE_THEIR_CENTER_IN", selection, None, "NEW_SELECTION")
-                arcpy.CalculateField_management(sewer_selection, 'GXPCity', f"{city}", 'PYTHON3')
+                arcpy.CalculateField_management(sewer_selection, "GXPCity", f"{city}", "PYTHON3")
         del cursor
 
     def pond_attribution():
@@ -275,6 +277,7 @@ def Attributor():
         storm = os.path.join(sde, "Stormwater")
         detention_areas = os.path.join(storm, "swDetention")
 
+        # Attribution
         facility_id = "str(!SHAPE!.centroid.X)[2:4] + str(!SHAPE!.centroid.Y)[2:4] + '-' + str(!SHAPE!.centroid.X)[4] + str(!SHAPE!.centroid.Y)[4] + '-' + " \
                       "str(!SHAPE!.centroid.X)[-2:] + str(!SHAPE!.centroid.Y)[-2:]"
         arcpy.CalculateField_management(detention_areas, "FACILITYID", facility_id, "PYTHON3")
