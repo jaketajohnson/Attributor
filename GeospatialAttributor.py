@@ -85,13 +85,6 @@ def Attributor():
     manhole_main_exception = "(WATERTYPE = 'SW' or OWNEDBY = -2) And FACILITYID IS NULL"
     cleanout_exception = "OWNEDBY = -2 and FACILITYID IS NULL"
 
-    # Storing the date one week from time of running as a filter
-    today = datetime.datetime.today()
-    yesterday = today - datetime.timedelta(days=1)
-    yesterday = yesterday.strftime(r"%m/%d/%Y %H:%M:%S")
-    today = today - datetime.timedelta(hours=12)
-    today = today.strftime(r"%m/%d/%Y %H:%M:%S")
-
     def sewer_attribution():
         """Attribute sewer assets
 
@@ -117,7 +110,7 @@ def Attributor():
         for asset in sewer_assets:
             logger.info(f"--- --- {asset[2]} Start")
             arcpy.MakeFeatureLayer_management(asset[0], "asset_temp")
-            selection_by_date = arcpy.SelectLayerByAttribute_management("asset_temp", "NEW_SELECTION", f"LASTUPDATE >= '{yesterday}'")
+            selection_by_date = arcpy.SelectLayerByAttribute_management("asset_temp", "NEW_SELECTION", f"LASTEDITOR <> 'COSPW'")
 
             # Looping through the list
             if int(arcpy.GetCount_management(selection_by_date).getOutput(0)) > 0:
@@ -133,14 +126,14 @@ def Attributor():
                     arcpy.CalculateFields_management("asset_temp", "PYTHON3", [["SPATAILSTART", spatial_start],
                                                                                ["SPATAILEND", spatial_end],
                                                                                ["SPATIALID", spatial_id_line_sewer]])
-                if asset[0] == sewer_manhole or sewer_main:
+                if asset[0] in {sewer_manhole, sewer_main}:
                     selection = arcpy.SelectLayerByAttribute_management("asset_temp", "NEW_SELECTION", manhole_main_exception)
                     arcpy.CalculateField_management(selection, "FACILITYID", "!SPATIALID!", "PYTHON3")
                 elif asset[0] == sewer_cleanout:
-                    selection = arcpy.SelectLayerByAttribute_management(asset[0], "NEW_SELECTION", cleanout_exception)
+                    selection = arcpy.SelectLayerByAttribute_management("asset_temp", "NEW_SELECTION", cleanout_exception)
                     arcpy.CalculateField_management(selection, "FACILITYID", "!SPATIALID!", "PYTHON3")
                 elif asset[0] == sewer_inlet:
-                    arcpy.CalculateField_management(asset[0], "FACILITYID", "!SPATIALID!", "PYTHON3")
+                    arcpy.CalculateField_management("asset_temp", "FACILITYID", "!SPATIALID!", "PYTHON3")
             logger.info(f"--- --- {asset[2]} Complete")
 
     def storm_attribution():
@@ -171,7 +164,7 @@ def Attributor():
             # Looping through the list
             logger.info(f"--- --- {asset[2]} Start")
             arcpy.MakeFeatureLayer_management(asset[0], "asset_temp")
-            selection_by_date = arcpy.SelectLayerByAttribute_management("asset_temp", "NEW_SELECTION", f"LASTUPDATE >= '{yesterday}' and LASTUPDATE < '{today}'")
+            selection_by_date = arcpy.SelectLayerByAttribute_management("asset_temp", "NEW_SELECTION", f"LASTEDITOR <> 'COSPW'")
 
             if int(arcpy.GetCount_management(selection_by_date).getOutput(0)) > 0:
                 if asset[1] == "line":
@@ -291,12 +284,6 @@ def Attributor():
             logger.error(tbinfo)
         except NameError:
             print(tbinfo)
-
-    except arcpy.ExecuteError:
-        try:
-            logger.error(arcpy.GetMessages(2))
-        except NameError:
-            print(arcpy.GetMessages(2))
 
     finally:
         try:
