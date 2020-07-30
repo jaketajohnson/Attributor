@@ -25,7 +25,7 @@ import re
 from logging.handlers import RotatingFileHandler
 
 
-def start_rotating_logging(log_file=None, max_bytes=100000, backup_count=1, suppress_requests_messages=True):
+def start_rotating_logging(log_file=None, max_bytes=10000, backup_count=1, suppress_requests_messages=True):
     """Creates a logger that outputs to stdout and a log file; outputs start and completion of functions or attribution of functions"""
 
     formatter = logging.Formatter(fmt="%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
@@ -89,6 +89,8 @@ def Attributor():
         """Attribute sewer assets
 
         Takes the list of assets and their type then uses it to calculate the geometry and spatial fields. If the asset is a noted exception, calculate the Facility ID.
+
+        Exceptions:
             * Gravity mains: privately owned sewers or stormwater sewers that output to a combined sewer.
             * Cleanouts: privately owned sewers
             * Inlets: all inlets
@@ -110,7 +112,7 @@ def Attributor():
         for asset in sewer_assets:
             logger.info(f"--- --- {asset[2]} Start")
             arcpy.MakeFeatureLayer_management(asset[0], "asset_temp")
-            selection_by_date = arcpy.SelectLayerByAttribute_management("asset_temp", "NEW_SELECTION", f"LASTEDITOR <> 'COSPW'")
+            selection_by_date = arcpy.SelectLayerByAttribute_management("asset_temp", "NEW_SELECTION", f"LASTEDITOR <> 'COSPW' and FACILITYID IS NOT NULL")
 
             # Looping through the list
             if int(arcpy.GetCount_management(selection_by_date).getOutput(0)) > 0:
@@ -126,6 +128,8 @@ def Attributor():
                     arcpy.CalculateFields_management("asset_temp", "PYTHON3", [["SPATAILSTART", spatial_start],
                                                                                ["SPATAILEND", spatial_end],
                                                                                ["SPATIALID", spatial_id_line_sewer]])
+
+                # Facility ID exceptions
                 if asset[0] in {sewer_manhole, sewer_main}:
                     selection = arcpy.SelectLayerByAttribute_management("asset_temp", "NEW_SELECTION", manhole_main_exception)
                     arcpy.CalculateField_management(selection, "FACILITYID", "!SPATIALID!", "PYTHON3")
@@ -164,7 +168,7 @@ def Attributor():
             # Looping through the list
             logger.info(f"--- --- {asset[2]} Start")
             arcpy.MakeFeatureLayer_management(asset[0], "asset_temp")
-            selection_by_date = arcpy.SelectLayerByAttribute_management("asset_temp", "NEW_SELECTION", f"LASTEDITOR <> 'COSPW'")
+            selection_by_date = arcpy.SelectLayerByAttribute_management("asset_temp", "NEW_SELECTION", f"LASTEDITOR <> 'COSPW' and FACILITYID is NULL")
 
             if int(arcpy.GetCount_management(selection_by_date).getOutput(0)) > 0:
                 if asset[1] == "line":
@@ -250,7 +254,7 @@ def Attributor():
     script_name_no_ext = os.path.splitext(os.path.basename(sys.argv[0]))[0]
     log_folder = os.path.join(script_folder, "Log_Files")
     log_file = os.path.join(log_folder, f"{script_name_no_ext}.log")
-    logger = start_rotating_logging(log_file, 100000, 1, True)
+    logger = start_rotating_logging(log_file, 10000, 1, True)
 
     # Run the above functions with logger error catching and formatting
     try:

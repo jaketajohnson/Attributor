@@ -7,7 +7,7 @@ import re
 from logging.handlers import RotatingFileHandler
 
 
-def start_rotating_logging(log_file=None, max_bytes=100000, backup_count=1, suppress_requests_messages=True):
+def start_rotating_logging(log_file=None, max_bytes=10000, backup_count=1, suppress_requests_messages=True):
     """Creates a logger that outputs to stdout and a log file; outputs start and completion of functions or attribution of functions"""
 
     formatter = logging.Formatter(fmt="%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
@@ -57,11 +57,17 @@ def SecondaryAttributor():
     # Environment
     arcpy.env.overwriteOutput = True
 
-    # Common feature classes
+    # Common feature classes and selecting edited assets
     sewer = os.path.join(sde, "SewerStormwater")
+
     sewer_main = os.path.join(sewer, "ssGravityMain")
+    arcpy.MakeFeatureLayer_management(sewer_main, "asset_temp_mains")
+
     sewer_manhole = os.path.join(sewer, "ssManhole")
-    sewer_assets = [sewer_main, sewer_manhole]
+    arcpy.MakeFeatureLayer_management(sewer_manhole, "asset_temp_manholes")
+    sewer_assets = ["asset_temp_mains", "asset_temp_manholes"]
+
+    # Selection edited assets
 
     def ward_attribution():
         """Attribute the sewer main GXPCity field using the administrative area polygons' label field its center is in. If it's a ward, add text to the label."""
@@ -77,7 +83,7 @@ def SecondaryAttributor():
                 else:
                     city = f"'{row[1]}'"
                 selection = arcpy.SelectLayerByAttribute_management(area, "NEW_SELECTION", f"OBJECTID = {row[0]}")
-                sewer_selection = arcpy.SelectLayerByLocation_management(sewer_main, "HAVE_THEIR_CENTER_IN", selection, None, "NEW_SELECTION")
+                sewer_selection = arcpy.SelectLayerByLocation_management("asset_temp_mains", "HAVE_THEIR_CENTER_IN", selection, None, "NEW_SELECTION")
                 arcpy.CalculateField_management(sewer_selection, "GXPCity", f"{city}", "PYTHON3")
         del cursor
 
@@ -94,6 +100,7 @@ def SecondaryAttributor():
                 selection = arcpy.SelectLayerByAttribute_management(districts, "NEW_SELECTION", f"OBJECTID = {row[0]}")
                 for asset in sewer_assets:
                     sewer_selection = arcpy.SelectLayerByLocation_management(asset, "HAVE_THEIR_CENTER_IN", selection, None, "NEW_SELECTION")
+                    sewer_selection = arcpy.SelectLayerByAttribute_management(sewer_selection, "NEW_SELECTION", f"DISTRICT <> '{row[1]}'")
                     arcpy.CalculateField_management(sewer_selection, "DISTRICT", f"'{row[1]}'", "PYTHON3")
         del cursor
 
@@ -109,8 +116,8 @@ def SecondaryAttributor():
                 selection = arcpy.SelectLayerByAttribute_management(plants, "NEW_SELECTION", f"OBJECTID = {row[0]}")
                 for asset in sewer_assets:
                     sewer_selection = arcpy.SelectLayerByLocation_management(asset, "HAVE_THEIR_CENTER_IN", selection, None, "NEW_SELECTION")
-                    sewer_nulls = arcpy.SelectLayerByAttribute_management(sewer_selection, "NEW_SELECTION", "PLANT IS NULL")
-                    arcpy.CalculateField_management(sewer_nulls, "PLANT", f"'{row[1]}'", "PYTHON3")
+                    sewer_selection = arcpy.SelectLayerByAttribute_management(sewer_selection, "NEW_SELECTION", f"PLANT <> '{row[1]}'")
+                    arcpy.CalculateField_management(sewer_selection, "PLANT", f"'{row[1]}'", "PYTHON3")
         del cursor
 
     def pond_attribution():
@@ -130,7 +137,7 @@ def SecondaryAttributor():
     script_name_no_ext = os.path.splitext(os.path.basename(sys.argv[0]))[0]
     log_folder = os.path.join(script_folder, "Log_Files")
     log_file = os.path.join(log_folder, f"{script_name_no_ext}.log")
-    logger = start_rotating_logging(log_file, 100000, 1, True)
+    logger = start_rotating_logging(log_file, 10000, 1, True)
 
     # Run the above functions with logger error catching and formatting
     try:
