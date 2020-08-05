@@ -1,6 +1,0 @@
-# Ignore GDBs, PyCharm files, and logs
-*.gdb
-*.idea
-*.log
-*.gitignore
-
