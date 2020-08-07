@@ -112,7 +112,7 @@ def Attributor():
         for asset in sewer_assets:
             logger.info(f"--- --- {asset[2]} Start")
             arcpy.MakeFeatureLayer_management(asset[0], "asset_temp")
-            selection_by_date = arcpy.SelectLayerByAttribute_management("asset_temp", "NEW_SELECTION", f"LASTEDITOR <> 'COSPW' and FACILITYID IS NOT NULL")
+            selection_by_date = arcpy.SelectLayerByAttribute_management("asset_temp", "NEW_SELECTION", f"LASTEDITOR <> 'COSPW' and FACILITYID IS NULL")
 
             # Looping through the list
             if int(arcpy.GetCount_management(selection_by_date).getOutput(0)) > 0:
@@ -168,7 +168,7 @@ def Attributor():
             # Looping through the list
             logger.info(f"--- --- {asset[2]} Start")
             arcpy.MakeFeatureLayer_management(asset[0], "asset_temp")
-            selection_by_date = arcpy.SelectLayerByAttribute_management("asset_temp", "NEW_SELECTION", f"LASTEDITOR <> 'COSPW' and FACILITYID is NULL")
+            selection_by_date = arcpy.SelectLayerByAttribute_management("asset_temp", "NEW_SELECTION", f"LASTEDITOR <> 'COSPW' and FACILITYID IS NULL")
 
             if int(arcpy.GetCount_management(selection_by_date).getOutput(0)) > 0:
                 if asset[1] == "line":
