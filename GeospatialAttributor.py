@@ -65,14 +65,14 @@ def start_rotating_logging(log_file=None, max_bytes=10000, backup_count=1, suppr
 def Attributor():
     """Collection of attribution functions"""
 
-    # Paths
-    fgdb_folder = r"F:\Shares\FGDB_Services"
-    sde = os.path.join(fgdb_folder, r"DatabaseConnections\COSPW@imSPFLD@MCWINTCWDB.sde")
+    # Environment settings
     arcpy.env.overwriteOutput = True
-    arcpy.env.workspace = r"memory\tempData"
 
-    # Environment
-    arcpy.env.overwriteOutput = True
+    # Folders
+    fgdb_folder = r"F:\Shares\FGDB_Services"
+
+    # SDEs and FGDB
+    sde = os.path.join(fgdb_folder, r"DatabaseConnections\COSPW@imSPFLD@MCWINTCWDB.sde")
 
     # Expressions
     spatial_start = "str(int(!NAD83XSTART!))[2:4] + str(int(!NAD83YSTART!))[2:4] + '-' + str(int(!NAD83XSTART!))[4] + str(int(!NAD83YSTART!))[4] + '-' + str(int(!NAD83XSTART!))[-2:] + str(int(!NAD83YSTART!))[-2:]"
@@ -81,9 +81,10 @@ def Attributor():
     spatial_id_line_storm = "!SPATIALSTART! + '_' + !SPATIALEND!"
     spatial_id_point = "str(int(!NAD83X!))[2:4] + str(int(!NAD83Y!))[2:4] + '-' + str(int(!NAD83X!))[4] + str(int(!NAD83Y!))[4] + '-' + str(int(!NAD83X!))[-2:] + str(int(!NAD83Y!))[-2:]"
 
-    # Expression to select manholes or inlets to calculate a Facility ID for (if it's stormwater or non-city owned)
-    manhole_main_exception = "(WATERTYPE = 'SW' or OWNEDBY = -2) And FACILITYID IS NULL"
-    cleanout_exception = "OWNEDBY = -2 and FACILITYID IS NULL"
+    # Selection expressions
+    manhole_main_exception = "(WATERTYPE = 'SW' or OWNEDBY = -2) AND FACILITYID IS NULL"
+    cleanout_exception = "OWNEDBY = -2 AND FACILITYID IS NULL"
+    inlet_exception = "FACILITYID IS NULL"
 
     def sewer_attribution():
         """Attribute sewer assets
@@ -112,22 +113,22 @@ def Attributor():
         for asset in sewer_assets:
             logger.info(f"--- --- {asset[2]} Start")
             arcpy.MakeFeatureLayer_management(asset[0], "asset_temp")
-            selection_by_date = arcpy.SelectLayerByAttribute_management("asset_temp", "NEW_SELECTION", f"LASTEDITOR <> 'COSPW' and FACILITYID IS NULL")
+            selection_by_date = arcpy.SelectLayerByAttribute_management("asset_temp", "NEW_SELECTION", f"LASTEDITOR <> 'COSPW' AND FACILITYID IS NULL")
 
             # Looping through the list
             if int(arcpy.GetCount_management(selection_by_date).getOutput(0)) > 0:
                 if asset[1] == "point":
-                    arcpy.CalculateGeometryAttributes_management("asset_temp", [["NAD83X", "POINT_X"],
-                                                                                ["NAD83Y", "POINT_Y"]])
-                    arcpy.CalculateField_management("asset_temp", "SPATIALID", spatial_id_point, "PYTHON3")
+                    arcpy.CalculateGeometryAttributes_management(selection_by_date, [["NAD83X", "POINT_X"],
+                                                                                     ["NAD83Y", "POINT_Y"]])
+                    arcpy.CalculateField_management(selection_by_date, "SPATIALID", spatial_id_point, "PYTHON3")
                 elif asset[1] == "line":
-                    arcpy.CalculateGeometryAttributes_management("asset_temp", [["NAD83XSTART", "LINE_START_X"],
-                                                                                ["NAD83YSTART", "LINE_START_Y"],
-                                                                                ["NAD83XEND", "LINE_END_X"],
-                                                                                ["NAD83YEND", "LINE_END_Y"]])
-                    arcpy.CalculateFields_management("asset_temp", "PYTHON3", [["SPATAILSTART", spatial_start],
-                                                                               ["SPATAILEND", spatial_end],
-                                                                               ["SPATIALID", spatial_id_line_sewer]])
+                    arcpy.CalculateGeometryAttributes_management(selection_by_date, [["NAD83XSTART", "LINE_START_X"],
+                                                                                     ["NAD83YSTART", "LINE_START_Y"],
+                                                                                     ["NAD83XEND", "LINE_END_X"],
+                                                                                     ["NAD83YEND", "LINE_END_Y"]])
+                    arcpy.CalculateFields_management(selection_by_date, "PYTHON3", [["SPATAILSTART", spatial_start],
+                                                                                    ["SPATAILEND", spatial_end],
+                                                                                    ["SPATIALID", spatial_id_line_sewer]])
 
                 # Facility ID exceptions
                 if asset[0] in {sewer_manhole, sewer_main}:
@@ -137,7 +138,8 @@ def Attributor():
                     selection = arcpy.SelectLayerByAttribute_management("asset_temp", "NEW_SELECTION", cleanout_exception)
                     arcpy.CalculateField_management(selection, "FACILITYID", "!SPATIALID!", "PYTHON3")
                 elif asset[0] == sewer_inlet:
-                    arcpy.CalculateField_management("asset_temp", "FACILITYID", "!SPATIALID!", "PYTHON3")
+                    selection = arcpy.SelectLayerByAttribute_management("asset_temp", "NEW_SELECTION", inlet_exception)
+                    arcpy.CalculateField_management(selection, "FACILITYID", "!SPATIALID!", "PYTHON3")
             logger.info(f"--- --- {asset[2]} Complete")
 
     def storm_attribution():
@@ -172,19 +174,20 @@ def Attributor():
 
             if int(arcpy.GetCount_management(selection_by_date).getOutput(0)) > 0:
                 if asset[1] == "line":
-                    arcpy.CalculateGeometryAttributes_management("asset_temp", [["NAD83XSTART", "LINE_START_X"],
-                                                                                ["NAD83YSTART", "LINE_START_Y"],
-                                                                                ["NAD83XEND", "LINE_END_X"],
-                                                                                ["NAD83YEND", "LINE_END_Y"]])
-                    arcpy.CalculateFields_management("asset_temp", "PYTHON3", [["SPATIALSTART", spatial_start],
-                                                                               ["SPATIALEND", spatial_end],
-                                                                               ["SPATIALID", spatial_id_line_storm],
-                                                                               ["FACILITYID", spatial_id_line_storm]])
+                    arcpy.CalculateGeometryAttributes_management(selection_by_date, [["NAD83XSTART", "LINE_START_X"],
+                                                                                     ["NAD83YSTART", "LINE_START_Y"],
+                                                                                     ["NAD83XEND", "LINE_END_X"],
+                                                                                     ["NAD83YEND", "LINE_END_Y"]])
+                    arcpy.CalculateFields_management(selection_by_date, "PYTHON3", [["SPATIALSTART", spatial_start],
+                                                                                    ["SPATIALEND", spatial_end],
+                                                                                    ["SPATIALID", spatial_id_line_storm],
+                                                                                    ["FACILITYID", spatial_id_line_storm]])
                 elif asset[1] == "point":
-                    arcpy.CalculateGeometryAttributes_management("asset_temp", [["NAD83X", "POINT_X"],
-                                                                                ["NAD83Y", "POINT_Y"]])
-                    arcpy.CalculateFields_management("asset_temp", "PYTHON3", [["SPATIALID", spatial_id_point],
-                                                                               ["FACILITYID", spatial_id_point]])
+                    arcpy.CalculateGeometryAttributes_management(selection_by_date, [["NAD83X", "POINT_X"],
+                                                                                     ["NAD83Y", "POINT_Y"]])
+                    arcpy.CalculateFields_management(selection_by_date, "PYTHON3", [["SPATIALID", spatial_id_point],
+                                                                                    ["FACILITYID", spatial_id_point]])
+
             logger.info(f"--- --- {asset[2]} Complete")
 
     def gps_attribution():
