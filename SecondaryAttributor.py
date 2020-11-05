@@ -1,51 +1,55 @@
+"""
+ SYNOPSIS
+
+     SecondaryAttributor
+
+ DESCRIPTION
+
+    * Attributes location based fields such as wards or sewer districts
+
+ REQUIREMENTS
+
+     Python 3
+     arcpy
+     natsort
+ """
+
 import arcpy
 import logging
 import os
 import sys
 import traceback
 import re
-from logging.handlers import RotatingFileHandler
 
 
-def start_rotating_logging(log_file=None, max_bytes=10000, backup_count=1, suppress_requests_messages=True):
-    """Creates a logger that outputs to stdout and a log file; outputs start and completion of functions or attribution of functions"""
-
-    formatter = logging.Formatter(fmt="%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
-
-    # Paths to desired log file
-    script_folder = os.path.dirname(sys.argv[0])
-    script_name = os.path.basename(sys.argv[0])
-    script_name_no_ext = os.path.splitext(script_name)[0]
-    log_folder = os.path.join(script_folder, "Log_Files")
-    if not log_file:
-        log_file = os.path.join(log_folder, f"{script_name_no_ext}.log")
-
-    # Start logging
-    the_logger = logging.getLogger(script_name)
-    the_logger.setLevel(logging.DEBUG)
-
-    # Add the rotating file handler
-    log_handler = RotatingFileHandler(filename=log_file, maxBytes=max_bytes, backupCount=backup_count)
-    log_handler.setLevel(logging.DEBUG)
-    log_handler.setFormatter(formatter)
-    the_logger.addHandler(log_handler)
-
-    # Add the console handler
+def ScriptLogging():
+    """Enables console and log file logging; see test script for comments on functionality"""
+    current_directory = os.getcwd()
+    script_filename = os.path.basename(sys.argv[0])
+    log_filename = os.path.splitext(script_filename)[0]
+    log_file = os.path.join(current_directory, f"{log_filename}.log")
+    if not os.path.exists(log_file):
+        with open(log_file, "w"):
+            pass
+    message_formatting = "%(asctime)s - %(levelname)s - %(message)s"
+    date_formatting = "%Y-%m-%d %H:%M:%S"
+    formatter = logging.Formatter(fmt=message_formatting, datefmt=date_formatting)
+    logging_output = logging.getLogger(f"{log_filename}")
+    logging_output.setLevel(logging.INFO)
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.DEBUG)
+    console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(formatter)
-    the_logger.addHandler(console_handler)
-
-    # Suppress SSL warnings in logs if instructed to
-    if suppress_requests_messages:
-        logging.getLogger("requests").setLevel(logging.WARNING)
-        logging.getLogger("urllib3").setLevel(logging.WARNING)
-
-    return the_logger
+    logging_output.addHandler(console_handler)
+    logging.basicConfig(format=message_formatting, datefmt=date_formatting, filename=log_file, filemode="w", level=logging.INFO)
+    return logging_output
 
 
 def SecondaryAttributor():
     """Collection of attribution functions"""
+
+    # Logging
+    logger = ScriptLogging()
+    logger.info("Script Execution Start")
 
     # Paths
     fgdb_folder = r"F:\Shares\FGDB_Services"
@@ -71,6 +75,7 @@ def SecondaryAttributor():
 
     def ward_attribution():
         """Attribute the sewer main GXPCity field using the administrative area polygons' label field its center is in. If it's a ward, add text to the label."""
+        logger.info("Ward Start")
 
         # Paths
         area = os.path.join(temp_fgdb, "AdministrativeArea")  # Townships and wards polygon
@@ -86,9 +91,11 @@ def SecondaryAttributor():
                 sewer_selection = arcpy.SelectLayerByLocation_management("asset_temp_mains", "HAVE_THEIR_CENTER_IN", selection, None, "NEW_SELECTION")
                 arcpy.CalculateField_management(sewer_selection, "GXPCity", f"{city}", "PYTHON3")
         del cursor
+        logger.info("Ward Complete")
 
     def district_attribution():
         """Attribute the sewer main Sewer District field using the Sewer Engineering polygons' label field its center is in."""
+        logger.info("District Start")
 
         # Paths
         engineering = os.path.join(sde, "SewerEngineering")
@@ -100,12 +107,13 @@ def SecondaryAttributor():
                 selection = arcpy.SelectLayerByAttribute_management(districts, "NEW_SELECTION", f"OBJECTID = {row[0]}")
                 for asset in sewer_assets:
                     sewer_selection = arcpy.SelectLayerByLocation_management(asset, "HAVE_THEIR_CENTER_IN", selection, None, "NEW_SELECTION")
-                    sewer_selection = arcpy.SelectLayerByAttribute_management(sewer_selection, "NEW_SELECTION", f"DISTRICT <> '{row[1]}'")
                     arcpy.CalculateField_management(sewer_selection, "DISTRICT", f"'{row[1]}'", "PYTHON3")
         del cursor
+        logger.info("District Complete")
 
     def plant_attribution():
         """Attribute the sewer treatment plant field; uses a modified district layer where districts with the same plant are merged."""
+        logger.info("Plant Start")
 
         # Paths
         plants = os.path.join(temp_fgdb, "TreatmentPlants")
@@ -116,12 +124,13 @@ def SecondaryAttributor():
                 selection = arcpy.SelectLayerByAttribute_management(plants, "NEW_SELECTION", f"OBJECTID = {row[0]}")
                 for asset in sewer_assets:
                     sewer_selection = arcpy.SelectLayerByLocation_management(asset, "HAVE_THEIR_CENTER_IN", selection, None, "NEW_SELECTION")
-                    sewer_selection = arcpy.SelectLayerByAttribute_management(sewer_selection, "NEW_SELECTION", f"PLANT <> '{row[1]}'")
                     arcpy.CalculateField_management(sewer_selection, "PLANT", f"'{row[1]}'", "PYTHON3")
         del cursor
+        logger.info("Plant Complete")
 
     def pond_attribution():
         """Calculate the Facility ID of detention ponds using its centroid coordinates"""
+        logger.info("Pond Start")
 
         # Paths
         storm = os.path.join(sde, "Stormwater")
@@ -131,50 +140,30 @@ def SecondaryAttributor():
         facility_id = "str(!SHAPE!.centroid.X)[2:4] + str(!SHAPE!.centroid.Y)[2:4] + '-' + str(!SHAPE!.centroid.X)[4] + str(!SHAPE!.centroid.Y)[4] + '-' + " \
                       "str(!SHAPE!.centroid.X)[-2:] + str(!SHAPE!.centroid.Y)[-2:]"
         arcpy.CalculateField_management(detention_areas, "FACILITYID", facility_id, "PYTHON3")
+        logger.info("Pond Complete")
 
-    # Run the above functions with logger error catching and formatting
-
-    logger = start_rotating_logging()
-
+    # Try running above scripts
     try:
-
-        logger.info("--- --- --- --- Ward Attribution Start")
         ward_attribution()
-        logger.info("--- --- --- --- Ward Attribution Complete")
-
-        logger.info("--- --- --- --- District Attribution Start")
         district_attribution()
-        logger.info("--- --- --- --- District Attribution Complete")
-
-        logger.info("--- --- --- --- Treatment Plant Attribution Start")
         plant_attribution()
-        logger.info("--- --- --- --- Treatment Plant Attribution Complete")
-
-        logger.info("--- --- --- --- Pond Attribution Start")
         pond_attribution()
-        logger.info("--- --- --- --- Pond Attribution Complete")
-
-    except (IOError, KeyError, NameError, IndexError, TypeError, UnboundLocalError):
-        tbinfo = traceback.format_exc()
+    except (IOError, KeyError, NameError, IndexError, TypeError, UnboundLocalError, ValueError):
+        traceback_info = traceback.format_exc()
         try:
-            logger.error(tbinfo)
+            logger.info(traceback_info)
         except NameError:
-            print(tbinfo)
-
+            print(traceback_info)
     except arcpy.ExecuteError:
         try:
-            tbinfo = traceback.format_exc(2)
-            logger.error(tbinfo)
+            logger.error(arcpy.GetMessages(2))
         except NameError:
             print(arcpy.GetMessages(2))
-
     except:
-        logger.exception("Picked up an exception:")
-
+        logger.exception("Picked up an exception!")
     finally:
         try:
-            logger.info("--- Script Execution Completed ---")
-            logging.shutdown()
+            logger.info("Script Execution Complete")
         except NameError:
             pass
 

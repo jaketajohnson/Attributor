@@ -1,7 +1,7 @@
 """
  SYNOPSIS
 
-     Attributor
+     GeospatialAttributor
 
  DESCRIPTION
 
@@ -22,60 +22,44 @@ import os
 import sys
 import traceback
 import re
-from logging.handlers import RotatingFileHandler
 
 
-def start_rotating_logging(log_file=None, max_bytes=10000, backup_count=1, suppress_requests_messages=True):
-    """Creates a logger that outputs to stdout and a log file; outputs start and completion of functions or attribution of functions"""
-
-    formatter = logging.Formatter(fmt="%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
-
-    # Paths to desired log file
-    script_folder = os.path.dirname(sys.argv[0])
-    script_name = os.path.basename(sys.argv[0])
-    script_name_no_ext = os.path.splitext(script_name)[0]
-    log_folder = os.path.join(script_folder, "Log_Files")
-    if not log_file:
-        log_file = os.path.join(log_folder, f"{script_name_no_ext}.log")
-
-    # Start logging
-    the_logger = logging.getLogger(script_name)
-    the_logger.setLevel(logging.DEBUG)
-
-    # Add the rotating file handler
-    log_handler = RotatingFileHandler(filename=log_file, maxBytes=max_bytes, backupCount=backup_count)
-    log_handler.setLevel(logging.DEBUG)
-    log_handler.setFormatter(formatter)
-    the_logger.addHandler(log_handler)
-
-    # Add the console handler
+def ScriptLogging():
+    """Enables console and log file logging; see test script for comments on functionality"""
+    current_directory = os.getcwd()
+    script_filename = os.path.basename(sys.argv[0])
+    log_filename = os.path.splitext(script_filename)[0]
+    log_file = os.path.join(current_directory, f"{log_filename}.log")
+    if not os.path.exists(log_file):
+        with open(log_file, "w"):
+            pass
+    message_formatting = "%(asctime)s - %(levelname)s - %(message)s"
+    date_formatting = "%Y-%m-%d %H:%M:%S"
+    formatter = logging.Formatter(fmt=message_formatting, datefmt=date_formatting)
+    logging_output = logging.getLogger(f"{log_filename}")
+    logging_output.setLevel(logging.INFO)
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.DEBUG)
+    console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(formatter)
-    the_logger.addHandler(console_handler)
-
-    # Suppress SSL warnings in logs if instructed to
-    if suppress_requests_messages:
-        logging.getLogger("requests").setLevel(logging.WARNING)
-        logging.getLogger("urllib3").setLevel(logging.WARNING)
-
-    return the_logger
+    logging_output.addHandler(console_handler)
+    logging.basicConfig(format=message_formatting, datefmt=date_formatting, filename=log_file, filemode="w", level=logging.INFO)
+    return logging_output
 
 
 def Attributor():
     """Collection of attribution functions"""
 
-    # Environment settings
-    arcpy.env.overwriteOutput = True
+    # Logging
+    logger = ScriptLogging()
+    logger.info("Script Execution Start")
 
-    # Folders
-    fgdb_folder = r"F:\Shares\FGDB_Services"
+    # Paths
+    geodatabase_services_folder = r"F:\Shares\FGDB_Services"
+    sde = os.path.join(geodatabase_services_folder, r"DatabaseConnections\COSPW@imSPFLD@MCWINTCWDB.sde")
 
-    # SDEs and FGDB
-    sde = os.path.join(fgdb_folder, r"DatabaseConnections\COSPW@imSPFLD@MCWINTCWDB.sde")
-
-    # Expressions
-    spatial_start = "str(int(!NAD83XSTART!))[2:4] + str(int(!NAD83YSTART!))[2:4] + '-' + str(int(!NAD83XSTART!))[4] + str(int(!NAD83YSTART!))[4] + '-' + str(int(!NAD83XSTART!))[-2:] + str(int(!NAD83YSTART!))[-2:]"
+    # Field calculator expressions
+    spatial_start = "str(int(!NAD83XSTART!))[2:4] + str(int(!NAD83YSTART!))[2:4] + '-' + str(int(!NAD83XSTART!))[4] + " \
+                    "str(int(!NAD83YSTART!))[4] + '-' + str(int(!NAD83XSTART!))[-2:] + str(int(!NAD83YSTART!))[-2:]"
     spatial_end = "str(int(!NAD83XEND!))[2:4] + str(int(!NAD83YEND!))[2:4] + '-' + str(int(!NAD83XEND!))[4] + str(int(!NAD83YEND!))[4] + '-' + str(int(!NAD83XEND!))[-2:] + str(int(!NAD83YEND!))[-2:]"
     spatial_id_line_sewer = "!SPATAILSTART! + '_' + !SPATAILEND!"  # Yes it's seriously misspelled
     spatial_id_line_storm = "!SPATIALSTART! + '_' + !SPATIALEND!"
@@ -85,6 +69,9 @@ def Attributor():
     manhole_main_exception = "(WATERTYPE = 'SW' or OWNEDBY = -2) AND FACILITYID IS NULL"
     cleanout_exception = "OWNEDBY = -2 AND FACILITYID IS NULL"
     inlet_exception = "FACILITYID IS NULL"
+
+    # Environment settings
+    arcpy.env.overwriteOutput = True
 
     def sewer_attribution():
         """Attribute sewer assets
@@ -97,13 +84,14 @@ def Attributor():
             * Inlets: all inlets
 
         """
+        logger.info("Sewer Start")
 
         # Paths
-        sewer = os.path.join(sde, "SewerStormwater")
-        sewer_main = os.path.join(sewer, "ssGravityMain")
-        sewer_manhole = os.path.join(sewer, "ssManhole")
-        sewer_cleanout = os.path.join(sewer, "ssCleanout")
-        sewer_inlet = os.path.join(sewer, "ssInlet")
+        sewer_dataset = os.path.join(sde, "SewerStormwater")
+        sewer_main = os.path.join(sewer_dataset, "ssGravityMain")
+        sewer_manhole = os.path.join(sewer_dataset, "ssManhole")
+        sewer_cleanout = os.path.join(sewer_dataset, "ssCleanout")
+        sewer_inlet = os.path.join(sewer_dataset, "ssInlet")
         sewer_assets = [[sewer_main, "line", "Sewer Mains"],
                         [sewer_manhole, "point", "Sewer Manholes"],
                         [sewer_cleanout, "point", "Sewer Cleanouts"],
@@ -111,7 +99,7 @@ def Attributor():
 
         # Attribution
         for asset in sewer_assets:
-            logger.info(f"--- --- {asset[2]} Start")
+            logger.info(f"{asset[2]} Start")
             arcpy.MakeFeatureLayer_management(asset[0], "asset_temp")
             selection_by_date = arcpy.SelectLayerByAttribute_management("asset_temp", "NEW_SELECTION", f"LASTEDITOR <> 'COSPW' AND FACILITYID IS NULL")
 
@@ -140,23 +128,21 @@ def Attributor():
                 elif asset[0] == sewer_inlet:
                     selection = arcpy.SelectLayerByAttribute_management("asset_temp", "NEW_SELECTION", inlet_exception)
                     arcpy.CalculateField_management(selection, "FACILITYID", "!SPATIALID!", "PYTHON3")
-            logger.info(f"--- --- {asset[2]} Complete")
+            logger.info(f"{asset[2]} Complete")
+        logger.info("Sewer Complete")
 
     def storm_attribution():
-        """Attribute storm assets
-
-        Takes the list of assets and their type then uses it to calculate the geometry and spatial fields.
-
-        """
+        """Takes the list of stormwater assets and their type then uses it to calculate the geometry and spatial fields."""
+        logger.info("Storm Start")
 
         # Paths
-        storm = os.path.join(sde, "Stormwater")
-        storm_main = os.path.join(storm, "swGravityMain")
-        storm_manhole = os.path.join(storm, "swManhole")
-        storm_cleanout = os.path.join(storm, "swCleanout")
-        storm_inlet = os.path.join(storm, "swInlet")
-        storm_discharge = os.path.join(storm, "swDischargePoint")
-        storm_culvert = os.path.join(storm, "swCulvert")
+        storm_dataset = os.path.join(sde, "Stormwater")
+        storm_main = os.path.join(storm_dataset, "swGravityMain")
+        storm_manhole = os.path.join(storm_dataset, "swManhole")
+        storm_cleanout = os.path.join(storm_dataset, "swCleanout")
+        storm_inlet = os.path.join(storm_dataset, "swInlet")
+        storm_discharge = os.path.join(storm_dataset, "swDischargePoint")
+        storm_culvert = os.path.join(storm_dataset, "swCulvert")
         storm_assets = [[storm_main, "line", "Storm Mains"],
                         [storm_manhole, "point", "Storm Manholes"],
                         [storm_cleanout, "point", "Storm Cleanouts"],
@@ -168,7 +154,7 @@ def Attributor():
         for asset in storm_assets:
 
             # Looping through the list
-            logger.info(f"--- --- {asset[2]} Start")
+            logger.info(f"{asset[2]} Start")
             arcpy.MakeFeatureLayer_management(asset[0], "asset_temp")
             selection_by_date = arcpy.SelectLayerByAttribute_management("asset_temp", "NEW_SELECTION", f"LASTEDITOR <> 'COSPW' and FACILITYID IS NULL")
 
@@ -188,7 +174,8 @@ def Attributor():
                     arcpy.CalculateFields_management(selection_by_date, "PYTHON3", [["SPATIALID", spatial_id_point],
                                                                                     ["FACILITYID", spatial_id_point]])
 
-            logger.info(f"--- --- {asset[2]} Complete")
+            logger.info(f"{asset[2]} Complete")
+        logger.info("Storm Complete")
 
     def gps_attribution():
         """Append new GPS shapefiles in the Y: drive to the gpsNode feature class on the SDE then calculate their facility ID
@@ -197,6 +184,7 @@ def Attributor():
         within the folders to gpsNode. After this, update the text file with the current date. Any folder with a date before this new date will not be appended next runtime.
 
         """
+        logger.info(r"GPS Start")
 
         # Paths
         engineering = os.path.join(sde, "SewerEngineering")
@@ -204,23 +192,24 @@ def Attributor():
         shape_folder = "Y:\\"
 
         # Grab last updated date from a text file
-        f = open("last_updated.txt", "r")
-        last_updated = [f.read()]
+        last_updated_file = open("last_updated.txt", "r")
+        last_updated = [last_updated_file.read()]
         datetime_format = "%Y-%m-%d"
+        logger.info(f"Last updated: {last_updated[0]}")
 
         # Create a list of folders to be appended
         folder_list = []
         for root, dirs, files in os.walk(shape_folder, topdown=False):
-            [folder_list.append(name) for name in dirs if re.search("[-]", name) and not re.search("[a-zA-z. ]", name) and
-             datetime.datetime.strptime(last_updated[0], datetime_format) < datetime.datetime.strptime(name, datetime_format)]  # Add any folder without a letter in it
+            [folder_list.append(folders) for folders in dirs if re.search("[-]", folders) and not re.search("[a-zA-z. ]", folders) and
+             datetime.datetime.strptime(last_updated[0], datetime_format) < datetime.datetime.strptime(folders, datetime_format)]  # Add any folder without a letter in it
 
         # Append new folders
         if len(folder_list) > 0:
             for folder in folder_list:
-                directory = os.path.join(shape_folder, folder)
-                for file in os.listdir(directory):
+                folder_path = os.path.join(shape_folder, folder)
+                for file in os.listdir(folder_path):
                     if file.endswith("insMACP.shp"):
-                        file_path = os.path.join(directory, file)
+                        file_path = os.path.join(folder_path, file)
                         arcpy.Append_management(file_path, gps_points, "NO_TEST",
                                                 fr'SPATIALID "Spatial Identifier" true true false 20 Text 0 0,First,#;'
                                                 fr'NAD83X "Easting (X)" true true false 8 Double 8 38,First,#,{file_path},Easting,-1,-1;'
@@ -248,52 +237,32 @@ def Attributor():
 
             # Update last_update.txt
             new_date = datetime.datetime.now().strftime(datetime_format)
-            f = open("last_updated.txt", "w")
-            f.write(f"{new_date}")
-            f.close()
+            last_updated_file = open("last_updated.txt", "w")
+            last_updated_file.write(f"{new_date}")
+            last_updated_file.close()
+        logger.info("GPS Complete")
 
-    # Run the above functions with logger error catching and formatting
-
-    logger = start_rotating_logging()
-
+    # Try running above scripts
     try:
-
-        logger.info("")
-        logger.info("--- Script Execution Started ---")
-
-        logger.info("--- --- --- --- Sewer Attribution Start")
         sewer_attribution()
-        logger.info("--- --- --- --- Sewer Attribution Complete")
-
-        logger.info("--- --- --- --- Storm Attribution Start")
         storm_attribution()
-        logger.info("--- --- --- --- Storm Attribution Complete")
-
-        logger.info("--- --- --- --- GPS Attribution Start")
         gps_attribution()
-        logger.info("--- --- --- --- GPS Attribution Complete")
-
-    except (IOError, KeyError, NameError, IndexError, TypeError, UnboundLocalError):
-        tbinfo = traceback.format_exc()
+    except (IOError, KeyError, NameError, IndexError, TypeError, UnboundLocalError, ValueError):
+        traceback_info = traceback.format_exc()
         try:
-            logger.error(tbinfo)
+            logger.info(traceback_info)
         except NameError:
-            print(tbinfo)
-
+            print(traceback_info)
     except arcpy.ExecuteError:
         try:
-            tbinfo = traceback.format_exc(2)
-            logger.error(tbinfo)
+            logger.error(arcpy.GetMessages(2))
         except NameError:
             print(arcpy.GetMessages(2))
-
     except:
-        logger.exception("Picked up an exception:")
-
+        logger.exception("Picked up an exception!")
     finally:
         try:
-            logger.info("--- Script Execution Completed ---")
-            logging.shutdown()
+            logger.info("Script Execution Complete")
         except NameError:
             pass
 
