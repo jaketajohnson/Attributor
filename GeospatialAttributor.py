@@ -46,10 +46,20 @@ def ScriptLogging():
     return logging_output
 
 
-def Attributor():
+def GeospatialAttributor():
     """Collection of attribution functions"""
 
     # Logging
+    def logging_lines(name):
+        """Use this wrapper to insert a message before and after the function for logging purposes"""
+        if type(name) == str:
+            def logging_decorator(function):
+                def logging_wrapper():
+                    logger.info(f"{name} Start")
+                    function()
+                    logger.info(f"{name} Complete")
+                return logging_wrapper
+            return logging_decorator
     logger = ScriptLogging()
     logger.info("Script Execution Start")
 
@@ -73,6 +83,7 @@ def Attributor():
     # Environment settings
     arcpy.env.overwriteOutput = True
 
+    @logging_lines("Sewer")
     def sewer_attribution():
         """Attribute sewer assets
 
@@ -84,7 +95,6 @@ def Attributor():
             * Inlets: all inlets
 
         """
-        logger.info("Sewer Start")
 
         # Paths
         sewer_dataset = os.path.join(sde, "SewerStormwater")
@@ -129,11 +139,10 @@ def Attributor():
                     selection = arcpy.SelectLayerByAttribute_management("asset_temp", "NEW_SELECTION", inlet_exception)
                     arcpy.CalculateField_management(selection, "FACILITYID", "!SPATIALID!", "PYTHON3")
             logger.info(f"{asset[2]} Complete")
-        logger.info("Sewer Complete")
 
+    @logging_lines("Storm")
     def storm_attribution():
         """Takes the list of stormwater assets and their type then uses it to calculate the geometry and spatial fields."""
-        logger.info("Storm Start")
 
         # Paths
         storm_dataset = os.path.join(sde, "Stormwater")
@@ -175,8 +184,8 @@ def Attributor():
                                                                                     ["FACILITYID", spatial_id_point]])
 
             logger.info(f"{asset[2]} Complete")
-        logger.info("Storm Complete")
 
+    @logging_lines("GPS")
     def gps_attribution():
         """Append new GPS shapefiles in the Y: drive to the gpsNode feature class on the SDE then calculate their facility ID
 
@@ -184,7 +193,6 @@ def Attributor():
         within the folders to gpsNode. After this, update the text file with the current date. Any folder with a date before this new date will not be appended next runtime.
 
         """
-        logger.info(r"GPS Start")
 
         # Paths
         engineering = os.path.join(sde, "SewerEngineering")
@@ -240,7 +248,6 @@ def Attributor():
             last_updated_file = open("last_updated.txt", "w")
             last_updated_file.write(f"{new_date}")
             last_updated_file.close()
-        logger.info("GPS Complete")
 
     # Try running above scripts
     try:
@@ -268,7 +275,7 @@ def Attributor():
 
 
 def main():
-    Attributor()
+    GeospatialAttributor()
 
 
 if __name__ == '__main__':

@@ -48,6 +48,16 @@ def SecondaryAttributor():
     """Collection of attribution functions"""
 
     # Logging
+    def logging_lines(name):
+        """Use this wrapper to insert a message before and after the function for logging purposes"""
+        if type(name) == str:
+            def logging_decorator(function):
+                def logging_wrapper():
+                    logger.info(f"{name} Start")
+                    function()
+                    logger.info(f"{name} Complete")
+                return logging_wrapper
+            return logging_decorator
     logger = ScriptLogging()
     logger.info("Script Execution Start")
 
@@ -71,11 +81,9 @@ def SecondaryAttributor():
     arcpy.MakeFeatureLayer_management(sewer_manhole, "asset_temp_manholes")
     sewer_assets = ["asset_temp_mains", "asset_temp_manholes"]
 
-    # Selection edited assets
-
+    @logging_lines("Wards")
     def ward_attribution():
         """Attribute the sewer main GXPCity field using the administrative area polygons' label field its center is in. If it's a ward, add text to the label."""
-        logger.info("Ward Start")
 
         # Paths
         area = os.path.join(temp_fgdb, "AdministrativeArea")  # Townships and wards polygon
@@ -91,11 +99,10 @@ def SecondaryAttributor():
                 sewer_selection = arcpy.SelectLayerByLocation_management("asset_temp_mains", "HAVE_THEIR_CENTER_IN", selection, None, "NEW_SELECTION")
                 arcpy.CalculateField_management(sewer_selection, "GXPCity", f"{city}", "PYTHON3")
         del cursor
-        logger.info("Ward Complete")
 
+    @logging_lines("Districts")
     def district_attribution():
         """Attribute the sewer main Sewer District field using the Sewer Engineering polygons' label field its center is in."""
-        logger.info("District Start")
 
         # Paths
         engineering = os.path.join(sde, "SewerEngineering")
@@ -109,11 +116,10 @@ def SecondaryAttributor():
                     sewer_selection = arcpy.SelectLayerByLocation_management(asset, "HAVE_THEIR_CENTER_IN", selection, None, "NEW_SELECTION")
                     arcpy.CalculateField_management(sewer_selection, "DISTRICT", f"'{row[1]}'", "PYTHON3")
         del cursor
-        logger.info("District Complete")
 
+    @logging_lines("Plants")
     def plant_attribution():
         """Attribute the sewer treatment plant field; uses a modified district layer where districts with the same plant are merged."""
-        logger.info("Plant Start")
 
         # Paths
         plants = os.path.join(temp_fgdb, "TreatmentPlants")
@@ -126,11 +132,10 @@ def SecondaryAttributor():
                     sewer_selection = arcpy.SelectLayerByLocation_management(asset, "HAVE_THEIR_CENTER_IN", selection, None, "NEW_SELECTION")
                     arcpy.CalculateField_management(sewer_selection, "PLANT", f"'{row[1]}'", "PYTHON3")
         del cursor
-        logger.info("Plant Complete")
 
+    @logging_lines("Ponds")
     def pond_attribution():
         """Calculate the Facility ID of detention ponds using its centroid coordinates"""
-        logger.info("Pond Start")
 
         # Paths
         storm = os.path.join(sde, "Stormwater")
@@ -140,7 +145,6 @@ def SecondaryAttributor():
         facility_id = "str(!SHAPE!.centroid.X)[2:4] + str(!SHAPE!.centroid.Y)[2:4] + '-' + str(!SHAPE!.centroid.X)[4] + str(!SHAPE!.centroid.Y)[4] + '-' + " \
                       "str(!SHAPE!.centroid.X)[-2:] + str(!SHAPE!.centroid.Y)[-2:]"
         arcpy.CalculateField_management(detention_areas, "FACILITYID", facility_id, "PYTHON3")
-        logger.info("Pond Complete")
 
     # Try running above scripts
     try:
