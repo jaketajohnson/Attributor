@@ -203,7 +203,7 @@ def GeospatialAttributor():
 
                     # Spatial join
                     start_join_map = fr"ORIG_FID 'ORIG_FID' true true false 255 Text 0 0,First,#,{start_vertices},ORIG_FID,-1,-1;\
-                    FROMMH 'FROMMH' true true false 255 Text 0 0,First,#,{upstream_manholes},FACILITYID,-1,-1"
+                    FROMMH 'FROMMH' true true false 255 Text 0 0,First,#,{upstream_manholes},FACILITYID,0,20"
                     arcpy.SpatialJoin_analysis(upstream_manholes, start_vertices, start_join, "JOIN_ONE_TO_MANY", "KEEP_COMMON", start_join_map)
                     arcpy.MakeFeatureLayer_management(start_join, "StartJoin")
 
