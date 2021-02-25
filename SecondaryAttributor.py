@@ -65,19 +65,16 @@ def SecondaryAttributor():
     fgdb_folder = r"F:\Shares\FGDB_Services"
     sde = os.path.join(fgdb_folder, r"DatabaseConnections\COSPW@imSPFLD@MCWINTCWDB.sde")
     temp_fgdb = os.path.join(fgdb_folder, r"Data\Attributor.gdb")
-    arcpy.env.overwriteOutput = True
-    arcpy.env.workspace = r"memory\tempData"
 
     # Environment
+    arcpy.env.workspace = r"memory\tempData"
     arcpy.env.overwriteOutput = True
 
     # Common feature classes and selecting edited assets
     sewer = os.path.join(sde, "SewerStormwater")
-
     sewer_main = os.path.join(sewer, "ssGravityMain")
-    arcpy.MakeFeatureLayer_management(sewer_main, "asset_temp_mains")
-
     sewer_manhole = os.path.join(sewer, "ssManhole")
+    arcpy.MakeFeatureLayer_management(sewer_main, "asset_temp_mains")
     arcpy.MakeFeatureLayer_management(sewer_manhole, "asset_temp_manholes")
     sewer_assets = ["asset_temp_mains", "asset_temp_manholes"]
 

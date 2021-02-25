@@ -91,12 +91,11 @@ def GeospatialAttributor():
     def sewer_attribution():
         """Attribute sewer assets
 
-        Takes the list of assets and their type then uses it to calculate the geometry and spatial fields. If the asset is a noted exception, calculate the Facility ID.
-
-        Exceptions:
-            * Gravity mains: privately owned sewers or stormwater sewers that output to a combined sewer.
-            * Cleanouts: privately owned sewers
-            * Inlets: all inlets
+        Takes the list of assets and their type then uses it to calculate the geometry and spatial fields.
+            * Calculates spatial coordinates and SPATIALID of all assets
+            * Calculates FACILITYID for unnamed manholes using map pages.
+            * Calculate FACILITYID for unnamed gravity mains using manholes at endpoints
+            * Calculate FACILITYID for other gravity mains, cleanouts, and inlets using spatial information
 
         """
 
@@ -298,8 +297,9 @@ def GeospatialAttributor():
     def gps_attribution():
         """Append new GPS shapefiles in the Y: drive to the gpsNode feature class on the SDE then calculate their facility ID
 
-        Use regex and the text file to sort through folders in the Y: drive to find those with the correct formatting and create a list of those. Use this list to append the shapefiles
-        within the folders to gpsNode. After this, update the text file with the current date. Any folder with a date before this new date will not be appended next runtime.
+            1. Use regex and the text file to sort through folders in the Y: drive to find those with the correct formatting and date and create a list of those.
+            2. Use this list to append the shapefiles within the folders to gpsNode.
+            3. After this, update the text file with the current date. Any folder with a date before this new date will not be appended next runtime.
 
         """
 
