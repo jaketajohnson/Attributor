@@ -23,6 +23,9 @@ import sys
 import traceback
 import re
 
+current_maximum_number = 0
+section = "0000AA000"
+
 
 def ScriptLogging():
     """Enables console and log file logging; see test script for comments on functionality"""
@@ -54,13 +57,11 @@ def GeospatialAttributor():
         """Use this wrapper to insert a message before and after the function for logging purposes"""
         if type(name) == str:
             def logging_decorator(function):
-                def logging_wrapper():
+                def logging_wrapper(*exception):
                     logger.info(f"{name} Start")
-                    function()
+                    function(*exception)
                     logger.info(f"{name} Complete")
-
                 return logging_wrapper
-
             return logging_decorator
 
     logger = ScriptLogging()
@@ -94,158 +95,163 @@ def GeospatialAttributor():
         Takes the list of assets and their type then uses it to calculate the geometry and spatial fields.
             * Calculates spatial coordinates and SPATIALID of all assets
             * Calculates FACILITYID for unnamed manholes using map pages.
-            * Calculate FACILITYID for unnamed gravity mains using manholes at endpoints
-            * Calculate FACILITYID for other gravity mains, cleanouts, and inlets using spatial information
+            * Calculates FACILITYID for unnamed gravity mains using manholes at endpoints
+            * Calculates FACILITYID for other gravity mains, cleanouts, and inlets using spatial information
 
         """
 
         # Paths
         sewer_dataset = os.path.join(sde, "SewerStormwater")
-        sewer_main = os.path.join(sewer_dataset, "ssGravityMain")
-        sewer_manhole = os.path.join(sewer_dataset, "ssManhole")
+        sewer_mains = os.path.join(sewer_dataset, "ssGravityMain")
+        sewer_manholes = os.path.join(sewer_dataset, "ssManhole")
         sewer_cleanout = os.path.join(sewer_dataset, "ssCleanout")
         sewer_inlet = os.path.join(sewer_dataset, "ssInlet")
-        sewer_assets = [[sewer_manhole, "point", "Sewer Manholes"],
-                        [sewer_main, "line", "Sewer Mains"],
+        sewer_assets = [[sewer_manholes, "point", "Sewer Manholes"],
+                        [sewer_mains, "line", "Sewer Mains"],
                         [sewer_cleanout, "point", "Sewer Cleanouts"],
                         [sewer_inlet, "point", "Sewer Inlets"]]
         cadastral_dataset = os.path.join(sde, "CadastralReference")
         quarter_sections = os.path.join(cadastral_dataset, "PLSSQuarterSection")
 
+        # Facility ID naming for sewer manholes
+        @logging_lines("Manhole Facility IDs")
+        def naming_new_manholes():
+
+            # Select all null manholes and quarter sections that contain it
+            selected_manholes = arcpy.SelectLayerByAttribute_management(sewer_manholes, "NEW_SELECTION", "FACILITYID IS NULL AND OWNEDBY = 1 AND STAGE = 0")
+            selected_quarter_sections = arcpy.SelectLayerByLocation_management(quarter_sections, "COMPLETELY_CONTAINS", selected_manholes)
+
+            if int(arcpy.GetCount_management(selected_manholes).getOutput(0)) > 0:
+
+                # Create a list of quarter sections then sanitize it
+                quarter_section_list = []
+                with arcpy.da.SearchCursor(selected_quarter_sections, "SEWMAP") as cursor:
+                    for row in cursor:
+                        quarter_section_list.append(row[0])
+                sanitized_quarter_section_list = [(section, section.replace("-", "")) for section in quarter_section_list]
+
+                # Select all relevant manholes in the current quarter section
+                global section
+                for section in sanitized_quarter_section_list:
+                    selected_manholes_in_section = arcpy.SelectLayerByAttribute_management(sewer_manholes, "NEW_SELECTION", f"FACILITYID LIKE '%{section[1]}%' AND OWNEDBY = 1 AND STAGE = 0")
+
+                    # For the current quarter section, find the highest last three digits of selected manholes
+                    with arcpy.da.SearchCursor(selected_manholes_in_section, "FACILITYID") as maximum_cursor:
+                        global current_maximum_number
+                        current_maximum = max(maximum_cursor)
+                        current_maximum_number = int(current_maximum[0].replace("SD", "")[-3:])
+
+                    # Select the null manholes inside the current quarter section
+                    selected_quarter_sections = arcpy.SelectLayerByAttribute_management(quarter_sections, "NEW_SELECTION", f"SEWMAP LIKE '%{section[0]}%'")
+                    selected_within_manholes = arcpy.SelectLayerByLocation_management(sewer_manholes, "COMPLETELY_WITHIN", selected_quarter_sections)
+                    selected_null_manholes = arcpy.SelectLayerByAttribute_management(selected_within_manholes, "SUBSET_SELECTION", "FACILITYID IS NULL AND OWNEDBY = 1 AND STAGE = 0")
+
+                    # Calculate the Facility IDs of each null manhole selected in the current quarter section, incrementing the last three digits per feature using the function below (indentation is correct)
+                    increment_function = """index = 0
+def increment():
+    global index
+    global current_maximum_number
+    start = 1
+
+    if index == 0:
+        index = start
+    else:
+        index += 1
+
+    new_maximum_number = current_maximum_number + index
+    new_name = f"{section[1]}{new_maximum_number:03}"
+    print(f"{index} + {current_maximum_number} = {new_name}")
+    return new_name"""
+                    arcpy.CalculateField_management(selected_null_manholes, "FACILITYID", f"increment()", "PYTHON3", increment_function)
+                    arcpy.Delete_management("SewerManholes")
+
+        # Facility ID naming for sewer gravity mains
+        @logging_lines("Main Facility IDs")
+        def naming_new_mains():
+
+            # Paths
+            attributor = os.path.join(data, "Attributor.gdb")
+            start_vertices = os.path.join(attributor, "StartVertices")
+            start_join = os.path.join(attributor, "StartJoin")
+            end_vertices = os.path.join(attributor, "EndVertices")
+            end_join = os.path.join(attributor, "EndJoin")
+
+            # Select all gravity mains to be calculated
+            selected_mains = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "FACILITYID IS NULL AND OWNEDBY = 1 AND STAGE = 0 AND "
+                                                                                                   "(WATERTYPE = 'SS' or WATERTYPE = 'CB')")
+
+            if int(arcpy.GetCount_management(selected_mains).getOutput(0)) > 0:
+
+                # Spatially join gravity main start endpoints to manholes
+                arcpy.FeatureVerticesToPoints_management(selected_mains, start_vertices, "START")
+                upstream_manholes = arcpy.SelectLayerByLocation_management(sewer_manholes, "INTERSECT", start_vertices)
+                start_join_map = fr"ORIG_FID 'ORIG_FID' true true false 255 Text 0 0,First,#,{start_vertices},ORIG_FID,-1,-1;FROMMH 'FROMMH' true true false 255 Text 0 0,First,#,{upstream_manholes},FACILITYID,-1,-1"
+                arcpy.SpatialJoin_analysis(upstream_manholes, start_vertices, start_join, "JOIN_ONE_TO_MANY", "KEEP_COMMON", start_join_map)
+                arcpy.MakeFeatureLayer_management(start_join, "StartJoin")
+
+                # Loop through start vertices and calculate FROMMH field
+                with arcpy.da.SearchCursor("StartJoin", ["ORIG_FID", "FROMMH"]) as cursor:
+                    for row in cursor:
+                        from_manhole = row[1]
+                        selected_from_manholes = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", f"OBJECTID = {row[0]}")
+                        arcpy.CalculateField_management(selected_from_manholes, "FROMMH", f"'{from_manhole}'", "PYTHON3")
+
+                # Spatially join gravity main start endpoints to manholes
+                selected_mains = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "FACILITYID IS NULL AND TOMH IS NULL AND STAGE = 0 AND OWNEDBY = 1 And (WATERTYPE = 'SS' or WATERTYPE = 'CB')")
+                arcpy.FeatureVerticesToPoints_management(selected_mains, end_vertices, "END")
+                downstream_manholes = arcpy.SelectLayerByLocation_management(sewer_manholes, "INTERSECT", end_vertices)
+                end_join_map = fr"ORIG_FID 'ORIG_FID' true true false 255 Text 0 0,First,#,{end_vertices},ORIG_FID,-1,-1;TOMH 'TOMH' true true false 255 Text 0 0,First,#,{downstream_manholes},FACILITYID,-1,-1"
+                arcpy.SpatialJoin_analysis(downstream_manholes, end_vertices, end_join, "JOIN_ONE_TO_MANY", "KEEP_COMMON", end_join_map)
+                arcpy.MakeFeatureLayer_management(end_join, "EndJoin")
+
+                # Loop through start vertices and calculate TOMH field
+                with arcpy.da.SearchCursor("EndJoin", ["ORIG_FID", "TOMH"]) as cursor:
+                    for row in cursor:
+                        to_manhole = row[1]
+                        selected_to_manholes = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", f"OBJECTID = {row[0]}")
+                        arcpy.CalculateField_management(selected_to_manholes, "TOMH", f"'{to_manhole}'", "PYTHON3")
+
+                # Finalize facility id as FROMMH + - + TOMH
+                selected_mains_final = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "FACILITYID IS NULL AND STAGE = 0 AND OWNEDBY = 1 AND (WATERTYPE = 'SS' or WATERTYPE = 'CB')")
+                arcpy.CalculateField_management(selected_mains_final, "FACILITYID", "!FROMMH! + '-' + !TOMH!", "PYTHON3")
+
+        @logging_lines("Facility ID Exceptions")
+        def naming_exceptions(exception):
+            selected_from_exception = arcpy.SelectLayerByAttribute_management("asset_temp", "NEW_SELECTION", exception)
+            arcpy.CalculateField_management(selected_from_exception, "FACILITYID", "!SPATIALID!", "PYTHON3")
+
         # Attribution
         for asset in sewer_assets:
             logger.info(f"{asset[2]} Start")
             arcpy.MakeFeatureLayer_management(asset[0], "asset_temp")
-            selection_by_date = arcpy.SelectLayerByAttribute_management("asset_temp", "NEW_SELECTION", f"LASTEDITOR <> 'COSPW' AND FACILITYID IS NULL")
+            selected_nulls = arcpy.SelectLayerByAttribute_management("asset_temp", "NEW_SELECTION", f"FACILITYID IS NULL")
 
-            # Looping through the list
-            if int(arcpy.GetCount_management(selection_by_date).getOutput(0)) > 0:
+            # Spatial ID loops
+            if int(arcpy.GetCount_management(selected_nulls).getOutput(0)) > 0:
                 if asset[1] == "point":
-                    arcpy.CalculateGeometryAttributes_management(selection_by_date, [["NAD83X", "POINT_X"],
-                                                                                     ["NAD83Y", "POINT_Y"]])
-                    arcpy.CalculateField_management(selection_by_date, "SPATIALID", spatial_id_point, "PYTHON3")
+                    arcpy.CalculateGeometryAttributes_management(selected_nulls, [["NAD83X", "POINT_X"],
+                                                                                  ["NAD83Y", "POINT_Y"]])
+                    arcpy.CalculateField_management(selected_nulls, "SPATIALID", spatial_id_point, "PYTHON3")
                 elif asset[1] == "line":
-                    arcpy.CalculateGeometryAttributes_management(selection_by_date, [["NAD83XSTART", "LINE_START_X"],
-                                                                                     ["NAD83YSTART", "LINE_START_Y"],
-                                                                                     ["NAD83XEND", "LINE_END_X"],
-                                                                                     ["NAD83YEND", "LINE_END_Y"]])
-                    arcpy.CalculateFields_management(selection_by_date, "PYTHON3", [["SPATAILSTART", spatial_start],
-                                                                                    ["SPATAILEND", spatial_end],
-                                                                                    ["SPATIALID", spatial_id_line_sewer]])
+                    arcpy.CalculateGeometryAttributes_management(selected_nulls, [["NAD83XSTART", "LINE_START_X"],
+                                                                                  ["NAD83YSTART", "LINE_START_Y"],
+                                                                                  ["NAD83XEND", "LINE_END_X"],
+                                                                                  ["NAD83YEND", "LINE_END_Y"]])
+                    arcpy.CalculateFields_management(selected_nulls, "PYTHON3", [["SPATAILSTART", spatial_start],
+                                                                                 ["SPATAILEND", spatial_end],
+                                                                                 ["SPATIALID", spatial_id_line_sewer]])
 
-                # Facility ID naming for sewer manholes
-                if asset[0] == sewer_manhole:
-
-                    # Select all null manholes
-                    arcpy.SelectLayerByAttribute_management(sewer_manhole, "NEW_SELECTION", "FACILITYID IS NULL AND OWNEDBY = 1 AND STAGE = 0")
-
-                    # Select all quarter sections with nulls inside
-                    with arcpy.da.SearchCursor(sewer_manhole, "WATERTYPE") as cursor:
-                        for row in cursor:
-                            arcpy.SelectLayerByLocation_management(quarter_sections, "COMPLETELY_CONTAINS", sewer_manhole)
-
-                    # Create a list of quarter sections then sanitized it
-                    quarter_section_list = []
-                    with arcpy.da.SearchCursor(quarter_sections, "SEWMAP") as cursor:
-                        for row in cursor:
-                            quarter_section_list.append(row[0])
-                    sanitized_quarter_section_list = [(section, section.replace("-", "")) for section in quarter_section_list]
-
-                    # Loop through each section, selecting all manholes, and create the next name
-                    for section in sanitized_quarter_section_list:
-                        arcpy.SelectLayerByAttribute_management(sewer_manhole, "NEW_SELECTION", f"FACILITYID LIKE '%{section[1]}%' AND OWNEDBY = 1 AND STAGE = 0")
-                        with arcpy.da.SearchCursor(sewer_manhole, "FACILITYID") as cursor:
-                            current_maximum = max(cursor)
-                            current_maximum_number = int(current_maximum[0].replace("SD", "")[-3:])
-
-                        # Code block to calculate the Facility ID field while incrementing the number by 1 for each row (126-->127-->128)
-                        code_block = """
-                    index = 0
-                    def increment():
-                        global index
-                        start = 1
-                        interval = 1
-
-                        if index == 0:
-                            index = start
-                        else:
-                            index = index + interval
-
-                        new_maximum_number = current_maximum_number + index
-                        new_maximum = f"{section[1]}{new_maximum_number:03}"
-                        return new_maximum"""
-
-                        # Select the null manholes inside the current quarter section then name each one
-                        arcpy.SelectLayerByAttribute_management(quarter_sections, "NEW_SELECTION", f"SEWMAP LIKE '%{section[0]}%'")
-                        arcpy.SelectLayerByLocation_management(sewer_manhole, "COMPLETELY_WITHIN", quarter_sections)
-                        arcpy.SelectLayerByAttribute_management(sewer_manhole, "SUBSET_SELECTION", "FACILITYID IS NULL AND OWNEDBY = 1 AND STAGE = 0")
-                        if int(arcpy.GetCount_management(sewer_manhole).getOutput(0)) > 0:
-                            with arcpy.da.SearchCursor(sewer_manhole, "FACILITYID") as cursor:
-                                for row in cursor:
-                                    arcpy.CalculateField_management(sewer_manhole, "FACILITYID", f"increment()", "PYTHON3", code_block)
-
-                # Facility ID naming for sewer gravity mains
-                if asset[0] == sewer_main:
-
-                    # Paths
-                    attributor = os.path.join(data, "Attributor.gdb")
-                    start_vertices = os.path.join(attributor, "StartVertices")
-                    start_join = os.path.join(attributor, "StartJoin")
-                    end_vertices = os.path.join(attributor, "EndVertices")
-                    end_join = os.path.join(attributor, "EndJoin")
-
-                    # Select all null gravity mains
-                    arcpy.SelectLayerByAttribute_management(sewer_main, "NEW_SELECTION", "FACILITYID IS NULL And FROMMH IS NULL And TOMH IS NULL And STAGE = 0 And OWNEDBY = 1 And WATERTYPE = 'SS'")
-
-                    # Upstream features
-                    arcpy.FeatureVerticesToPoints_management(sewer_main, start_vertices, "START")
-                    upstream_manholes = arcpy.SelectLayerByLocation_management(sewer_manhole, "INTERSECT", start_vertices)
-
-                    # Spatial join
-                    start_join_map = fr"ORIG_FID 'ORIG_FID' true true false 255 Text 0 0,First,#,{start_vertices},ORIG_FID,-1,-1;\
-                    FROMMH 'FROMMH' true true false 255 Text 0 0,First,#,{upstream_manholes},FACILITYID,0,20"
-                    arcpy.SpatialJoin_analysis(upstream_manholes, start_vertices, start_join, "JOIN_ONE_TO_MANY", "KEEP_COMMON", start_join_map)
-                    arcpy.MakeFeatureLayer_management(start_join, "StartJoin")
-
-                    # Loop through start vertices and calculate
-                    with arcpy.da.SearchCursor("StartJoin", ["ORIG_FID", "F__FROMMH"]) as cursor:
-                        for row in cursor:
-                            arcpy.SelectLayerByAttribute_management(sewer_main, "NEW_SELECTION", f"OBJECTID = {row[0]}")
-                            arcpy.CalculateField_management(sewer_main, "FROMMH", f"'{row[1]}'", "PYTHON3")
-
-                    # Select all null gravity mains
-                    arcpy.SelectLayerByAttribute_management(sewer_main, "NEW_SELECTION", "FACILITYID IS NULL And TOMH IS NULL And STAGE = 0 And OWNEDBY = 1 And WATERTYPE = 'SS'")
-
-                    # Downstream features
-                    arcpy.FeatureVerticesToPoints_management(sewer_main, end_vertices, "END")
-                    downstream_manholes = arcpy.SelectLayerByLocation_management(sewer_manhole, "INTERSECT", end_vertices)
-
-                    # Spatial join
-                    end_join_map = fr"ORIG_FID 'ORIG_FID' true true false 255 Text 0 0,First,#,{end_vertices},ORIG_FID,-1,-1;\
-                    TOMH 'TOMH' true true false 255 Text 0 0,First,#,{downstream_manholes},FACILITYID,0,20"
-                    arcpy.SpatialJoin_analysis(downstream_manholes, end_vertices, end_join, "JOIN_ONE_TO_MANY", "KEEP_COMMON", end_join_map)
-                    arcpy.MakeFeatureLayer_management(end_join, "EndJoin")
-
-                    # Loop through start vertices and calculate
-                    with arcpy.da.SearchCursor("EndJoin", ["ORIG_FID", "F__TOMH"]) as cursor:
-                        for row in cursor:
-                            arcpy.SelectLayerByAttribute_management(sewer_main, "NEW_SELECTION", f"OBJECTID = {row[0]}")
-                            arcpy.CalculateField_management(sewer_main, "TOMH", f"'{row[1]}'", "PYTHON3")
-
-                    # Finalize facility id as FROMMH_TOMH
-                    arcpy.SelectLayerByAttribute_management(sewer_main, "NEW_SELECTION", "FACILITYID IS NULL AND STAGE = 0 And OWNEDBY = 1 And WATERTYPE = 'SS'")
-                    arcpy.CalculateField_management(sewer_main, "FACILITYID", "!FROMMH! + '-' + !TOMH!", "PYTHON3")
-
-                # Facility ID exceptions
-                if asset[0] in {sewer_manhole, sewer_main}:
-                    selection = arcpy.SelectLayerByAttribute_management("asset_temp", "NEW_SELECTION", manhole_main_exception)
-                    arcpy.CalculateField_management(selection, "FACILITYID", "!SPATIALID!", "PYTHON3")
+                # Facility ID loops
+                if asset[0] == sewer_manholes:
+                    naming_new_manholes()
+                    naming_exceptions(manhole_main_exception)
+                if asset[0] == sewer_mains:
+                    naming_new_mains()
+                    naming_exceptions(manhole_main_exception)
                 elif asset[0] == sewer_cleanout:
-                    selection = arcpy.SelectLayerByAttribute_management("asset_temp", "NEW_SELECTION", cleanout_exception)
-                    arcpy.CalculateField_management(selection, "FACILITYID", "!SPATIALID!", "PYTHON3")
+                    naming_exceptions(cleanout_exception)
                 elif asset[0] == sewer_inlet:
-                    selection = arcpy.SelectLayerByAttribute_management("asset_temp", "NEW_SELECTION", inlet_exception)
-                    arcpy.CalculateField_management(selection, "FACILITYID", "!SPATIALID!", "PYTHON3")
+                    naming_exceptions(inlet_exception)
             logger.info(f"{asset[2]} Complete")
 
     @logging_lines("Storm")
