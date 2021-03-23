@@ -183,6 +183,8 @@ def increment():
             if int(arcpy.GetCount_management(selected_mains).getOutput(0)) > 0:
 
                 # Spatially join gravity main start endpoints to manholes
+                selected_mains = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "FACILITYID IS NULL AND FROMMH IS NULL AND STAGE = 0 AND "
+                                                                                                       "OWNEDBY = 1 And (WATERTYPE = 'SS' or WATERTYPE = 'CB')")
                 arcpy.FeatureVerticesToPoints_management(selected_mains, start_vertices, "START")
                 upstream_manholes = arcpy.SelectLayerByLocation_management(sewer_manholes, "INTERSECT", start_vertices)
                 start_join_map = fr"ORIG_FID 'ORIG_FID' true true false 255 Text 0 0,First,#,{start_vertices},ORIG_FID,-1,-1;FROMMH 'FROMMH' true true false 255 Text 0 0,First,#,{upstream_manholes},FACILITYID,-1,-1"
@@ -192,9 +194,9 @@ def increment():
                 # Loop through start vertices and calculate FROMMH field
                 with arcpy.da.SearchCursor("StartJoin", ["ORIG_FID", "FROMMH"]) as cursor:
                     for row in cursor:
-                        from_manhole = row[1]
-                        selected_from_manholes = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", f"OBJECTID = {row[0]}")
-                        arcpy.CalculateField_management(selected_from_manholes, "FROMMH", f"'{from_manhole}'", "PYTHON3")
+                        selected_mains = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", f"OBJECTID = {row[0]}")
+                        arcpy.CalculateField_management(selected_mains, "FROMMH", f"'{row[1]}'", "PYTHON3")
+                        logger.info(f"{row[1]}")
 
                 # Spatially join gravity main start endpoints to manholes
                 selected_mains = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "FACILITYID IS NULL AND TOMH IS NULL AND STAGE = 0 AND OWNEDBY = 1 And (WATERTYPE = 'SS' or WATERTYPE = 'CB')")
@@ -207,9 +209,8 @@ def increment():
                 # Loop through start vertices and calculate TOMH field
                 with arcpy.da.SearchCursor("EndJoin", ["ORIG_FID", "TOMH"]) as cursor:
                     for row in cursor:
-                        to_manhole = row[1]
                         selected_to_manholes = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", f"OBJECTID = {row[0]}")
-                        arcpy.CalculateField_management(selected_to_manholes, "TOMH", f"'{to_manhole}'", "PYTHON3")
+                        arcpy.CalculateField_management(selected_to_manholes, "TOMH", f"'{row[1]}'", "PYTHON3")
 
                 # Finalize facility id as FROMMH + - + TOMH
                 selected_mains_final = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "FACILITYID IS NULL AND STAGE = 0 AND OWNEDBY = 1 AND (WATERTYPE = 'SS' or WATERTYPE = 'CB')")
