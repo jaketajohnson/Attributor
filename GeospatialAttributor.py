@@ -166,8 +166,14 @@ def increment():
                     arcpy.Delete_management("SewerManholes")
 
         # Facility ID naming for sewer gravity mains
-        @logging_lines("Main Facility IDs")
-        def naming_new_mains():
+        @logging_lines("Sewer Mains' (FROMMH/TOMH/FACILITYID)")
+        def new_sewer_mains():
+            """Calculate several fields for sewer gravity mains:
+
+            1. FROMMH/TOMH: upstream/downstream manholes, respectively; based on map page + highest 3 digit number (e.g. 1433CD + 095)
+            3. FACILITYID: formatted FROMMH-TOMH
+
+            """
 
             # Paths
             attributor = os.path.join(data, "Attributor.gdb")
@@ -212,14 +218,26 @@ def increment():
                         selected_to_manholes = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", f"OBJECTID = {row[0]}")
                         arcpy.CalculateField_management(selected_to_manholes, "TOMH", f"'{row[1]}'", "PYTHON3")
 
-                # Finalize facility id as FROMMH + - + TOMH
+                # Finalize facility id
                 selected_mains_final = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "FACILITYID IS NULL AND STAGE = 0 AND OWNEDBY = 1 AND (WATERTYPE = 'SS' or WATERTYPE = 'CB')")
                 arcpy.CalculateField_management(selected_mains_final, "FACILITYID", "!FROMMH! + '-' + !TOMH!", "PYTHON3")
+
+        @logging_lines("Storm Mains' (FROMMH/TOMH)")
+        def new_storm_mains():
+            """Calculate the FROMMH/TOMH fields from the FACILITYID as the storm manholes ID is much simpler than gravity mains."""
+
+            selected_storm_mains = arcpy.SelectLayerByAttribute_management(sewer_mains, "OWNEDBY = 1 AND STAGE = 0 AND WATERTYPE = 'SW'")
+
+            if int(arcpy.GetCount_management(selected_storm_mains).getOutput(0)) > 0:
+                arcpy.CalculateFields_management(selected_storm_mains, "PYTHON3", [["FROMMH", "!FACILITYID![:12]"],
+                                                                                   ["TOMH", "!FACILITYID![-12:]"]])
 
         @logging_lines("Facility ID Exceptions")
         def naming_exceptions(exception):
             selected_from_exception = arcpy.SelectLayerByAttribute_management("asset_temp", "NEW_SELECTION", exception)
-            arcpy.CalculateField_management(selected_from_exception, "FACILITYID", "!SPATIALID!", "PYTHON3")
+
+            if int(arcpy.GetCount_management(selected_from_exception).getOutput(0)) > 0:
+                arcpy.CalculateField_management(selected_from_exception, "FACILITYID", "!SPATIALID!", "PYTHON3")
 
         # Attribution
         for asset in sewer_assets:
@@ -247,7 +265,8 @@ def increment():
                     naming_new_manholes()
                     naming_exceptions(manhole_main_exception)
                 if asset[0] == sewer_mains:
-                    naming_new_mains()
+                    new_sewer_mains()
+                    new_storm_mains()
                     naming_exceptions(manhole_main_exception)
                 elif asset[0] == sewer_cleanout:
                     naming_exceptions(cleanout_exception)
