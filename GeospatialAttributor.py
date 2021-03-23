@@ -226,7 +226,7 @@ def increment():
         def new_storm_mains():
             """Calculate the FROMMH/TOMH fields from the FACILITYID as the storm manholes ID is much simpler than gravity mains."""
 
-            selected_storm_mains = arcpy.SelectLayerByAttribute_management(sewer_mains, "OWNEDBY = 1 AND STAGE = 0 AND WATERTYPE = 'SW'")
+            selected_storm_mains = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "OWNEDBY = 1 AND STAGE = 0 AND WATERTYPE = 'SW' AND (FROMMH IS NULL OR TOMH IS NULL)")
 
             if int(arcpy.GetCount_management(selected_storm_mains).getOutput(0)) > 0:
                 arcpy.CalculateFields_management(selected_storm_mains, "PYTHON3", [["FROMMH", "!FACILITYID![:12]"],
