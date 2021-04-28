@@ -184,13 +184,13 @@ def increment():
 
             # Select all gravity mains to be calculated
             selected_mains = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "FACILITYID IS NULL AND OWNEDBY = 1 AND STAGE = 0 AND "
-                                                                                                   "(WATERTYPE = 'SS' or WATERTYPE = 'CB')")
+                                                                                                   "(WATERTYPE = 'SS' OR WATERTYPE = 'CB')")
 
             if int(arcpy.GetCount_management(selected_mains).getOutput(0)) > 0:
 
                 # Spatially join gravity main start endpoints to manholes
                 selected_mains = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "FACILITYID IS NULL AND FROMMH IS NULL AND STAGE = 0 AND "
-                                                                                                       "OWNEDBY = 1 And (WATERTYPE = 'SS' or WATERTYPE = 'CB')")
+                                                                                                       "OWNEDBY = 1 AND (WATERTYPE = 'SS' OR WATERTYPE = 'CB')")
                 arcpy.FeatureVerticesToPoints_management(selected_mains, start_vertices, "START")
                 upstream_manholes = arcpy.SelectLayerByLocation_management(sewer_manholes, "INTERSECT", start_vertices)
                 start_join_map = fr"ORIG_FID 'ORIG_FID' true true false 255 Text 0 0,First,#,{start_vertices},ORIG_FID,-1,-1;FROMMH 'FROMMH' true true false 255 Text 0 0,First,#,{upstream_manholes},FACILITYID,-1,-1"
@@ -205,7 +205,7 @@ def increment():
                         logger.info(f"{row[1]}")
 
                 # Spatially join gravity main start endpoints to manholes
-                selected_mains = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "FACILITYID IS NULL AND TOMH IS NULL AND STAGE = 0 AND OWNEDBY = 1 And (WATERTYPE = 'SS' or WATERTYPE = 'CB')")
+                selected_mains = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "(TOMH IS NULL OR TOMH = '2207AB032') AND STAGE = 0 AND OWNEDBY = 1 AND (WATERTYPE = 'SS' or WATERTYPE = 'CB')")
                 arcpy.FeatureVerticesToPoints_management(selected_mains, end_vertices, "END")
                 downstream_manholes = arcpy.SelectLayerByLocation_management(sewer_manholes, "INTERSECT", end_vertices)
                 end_join_map = fr"ORIG_FID 'ORIG_FID' true true false 255 Text 0 0,First,#,{end_vertices},ORIG_FID,-1,-1;TOMH 'TOMH' true true false 255 Text 0 0,First,#,{downstream_manholes},FACILITYID,-1,-1"
@@ -219,7 +219,7 @@ def increment():
                         arcpy.CalculateField_management(selected_to_manholes, "TOMH", f"'{row[1]}'", "PYTHON3")
 
                 # Finalize facility id
-                selected_mains_final = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "FACILITYID IS NULL AND STAGE = 0 AND OWNEDBY = 1 AND (WATERTYPE = 'SS' or WATERTYPE = 'CB')")
+                selected_mains_final = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "FACILITYID IS NULL AND STAGE = 0 AND OWNEDBY = 1 AND (WATERTYPE = 'SS' OR WATERTYPE = 'CB')")
                 arcpy.CalculateField_management(selected_mains_final, "FACILITYID", "!FROMMH! + '-' + !TOMH!", "PYTHON3")
 
         @logging_lines("Storm Mains' (FROMMH/TOMH)")
