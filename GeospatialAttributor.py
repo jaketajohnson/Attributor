@@ -89,7 +89,7 @@ def GeospatialAttributor():
     arcpy.env.overwriteOutput = True
 
     @logging_lines("Sewer")
-    def sewer_attribution():
+    def SewerAttribution():
         """Attribute sewer assets
 
         Takes the list of assets and their type then uses it to calculate the geometry and spatial fields.
@@ -115,7 +115,7 @@ def GeospatialAttributor():
 
         # Facility ID naming for sewer manholes
         @logging_lines("Manhole Facility IDs")
-        def naming_new_manholes():
+        def NamingManholes():
 
             # Select all null manholes and quarter sections that contain it
             selected_manholes = arcpy.SelectLayerByAttribute_management(sewer_manholes, "NEW_SELECTION", "FACILITYID IS NULL AND OWNEDBY = 1 AND STAGE = 0")
@@ -166,8 +166,8 @@ def increment():
                     arcpy.Delete_management("SewerManholes")
 
         # Facility ID naming for sewer gravity mains
-        @logging_lines("Sewer Mains' (FROMMH/TOMH/FACILITYID)")
-        def new_sewer_mains():
+        @logging_lines("Sewer Mains")
+        def SewerMains():
             """Calculate several fields for sewer gravity mains:
 
             1. FROMMH/TOMH: upstream/downstream manholes, respectively; based on map page + highest 3 digit number (e.g. 1433CD + 095)
@@ -222,8 +222,8 @@ def increment():
                 selected_mains_final = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "FACILITYID IS NULL AND STAGE = 0 AND OWNEDBY = 1 AND (WATERTYPE = 'SS' OR WATERTYPE = 'CB')")
                 arcpy.CalculateField_management(selected_mains_final, "FACILITYID", "!FROMMH! + '-' + !TOMH!", "PYTHON3")
 
-        @logging_lines("Storm Mains' (FROMMH/TOMH)")
-        def new_storm_mains():
+        @logging_lines("Storm Mains")
+        def StormMains():
             """Calculate the FROMMH/TOMH fields from the FACILITYID as the storm manholes ID is much simpler than gravity mains."""
 
             selected_storm_mains = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "OWNEDBY = 1 AND STAGE = 0 AND WATERTYPE = 'SW' AND (FROMMH IS NULL OR TOMH IS NULL)")
@@ -233,7 +233,7 @@ def increment():
                                                                                    ["TOMH", "!FACILITYID![-12:]"]])
 
         @logging_lines("Facility ID Exceptions")
-        def naming_exceptions(exception):
+        def NamingExceptions(exception):
             selected_from_exception = arcpy.SelectLayerByAttribute_management("asset_temp", "NEW_SELECTION", exception)
 
             if int(arcpy.GetCount_management(selected_from_exception).getOutput(0)) > 0:
@@ -262,20 +262,20 @@ def increment():
 
                 # Facility ID loops
                 if asset[0] == sewer_manholes:
-                    naming_new_manholes()
-                    naming_exceptions(manhole_main_exception)
+                    NamingManholes()
+                    NamingExceptions(manhole_main_exception)
                 if asset[0] == sewer_mains:
-                    new_sewer_mains()
-                    new_storm_mains()
-                    naming_exceptions(manhole_main_exception)
+                    SewerMains()
+                    StormMains()
+                    NamingExceptions(manhole_main_exception)
                 elif asset[0] == sewer_cleanout:
-                    naming_exceptions(cleanout_exception)
+                    NamingExceptions(cleanout_exception)
                 elif asset[0] == sewer_inlet:
-                    naming_exceptions(inlet_exception)
+                    NamingExceptions(inlet_exception)
             logger.info(f"{asset[2]} Complete")
 
     @logging_lines("Storm")
-    def storm_attribution():
+    def StormAttribution():
         """Takes the list of stormwater assets and their type then uses it to calculate the geometry and spatial fields."""
 
         # Paths
@@ -320,7 +320,7 @@ def increment():
             logger.info(f"{asset[2]} Complete")
 
     @logging_lines("GPS")
-    def gps_attribution():
+    def GPSAttribution():
         """Append new GPS shapefiles in the Y: drive to the gpsNode feature class on the SDE then calculate their facility ID
 
             1. Use regex and the text file to sort through folders in the Y: drive to find those with the correct formatting and date and create a list of those.
@@ -386,9 +386,9 @@ def increment():
 
     # Try running above scripts
     try:
-        sewer_attribution()
-        storm_attribution()
-        gps_attribution()
+        SewerAttribution()
+        StormAttribution()
+        GPSAttribution()
     except (IOError, KeyError, NameError, IndexError, TypeError, UnboundLocalError, ValueError):
         traceback_info = traceback.format_exc()
         try:

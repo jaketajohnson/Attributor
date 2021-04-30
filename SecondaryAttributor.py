@@ -79,7 +79,7 @@ def SecondaryAttributor():
     sewer_assets = ["asset_temp_mains", "asset_temp_manholes"]
 
     @logging_lines("Wards")
-    def ward_attribution():
+    def WardAttribution():
         """Attribute the sewer main GXPCity field using the administrative area polygons' label field its center is in. If it's a ward, add text to the label."""
 
         # Paths
@@ -98,7 +98,7 @@ def SecondaryAttributor():
         del cursor
 
     @logging_lines("Districts")
-    def district_attribution():
+    def DistrictAttribution():
         """Attribute the sewer main Sewer District field using the Sewer Engineering polygons' label field its center is in."""
 
         # Paths
@@ -115,7 +115,7 @@ def SecondaryAttributor():
         del cursor
 
     @logging_lines("Plants")
-    def plant_attribution():
+    def PlantAttribution():
         """Attribute the sewer treatment plant field; uses a modified district layer where districts with the same plant are merged."""
 
         # Paths
@@ -131,7 +131,7 @@ def SecondaryAttributor():
         del cursor
 
     @logging_lines("Ponds")
-    def pond_attribution():
+    def PondAttribution():
         """Calculate the Facility ID of detention ponds using its centroid coordinates"""
 
         # Paths
@@ -145,10 +145,10 @@ def SecondaryAttributor():
 
     # Try running above scripts
     try:
-        ward_attribution()
-        district_attribution()
-        plant_attribution()
-        pond_attribution()
+        WardAttribution()
+        DistrictAttribution()
+        PlantAttribution()
+        PondAttribution()
     except (IOError, KeyError, NameError, IndexError, TypeError, UnboundLocalError, ValueError):
         traceback_info = traceback.format_exc()
         try:
