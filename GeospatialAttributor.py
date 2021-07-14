@@ -53,14 +53,14 @@ def GeospatialAttributor():
     """Collection of attribution functions"""
 
     # Logging
-    def logging_lines(name):
+    def logging_lines(name, level):
         """Use this wrapper to insert a message before and after the function for logging purposes"""
         if type(name) == str:
             def logging_decorator(function):
                 def logging_wrapper(*exception):
-                    logger.info(f"{name} Start")
+                    logger.info("---"*level+f"{name} Start")
                     function(*exception)
-                    logger.info(f"{name} Complete")
+                    logger.info("---"*level+f"{name} Complete")
                 return logging_wrapper
             return logging_decorator
 
@@ -81,14 +81,14 @@ def GeospatialAttributor():
     spatial_id_point = "str(int(!NAD83X!))[2:4] + str(int(!NAD83Y!))[2:4] + '-' + str(int(!NAD83X!))[4] + str(int(!NAD83Y!))[4] + '-' + str(int(!NAD83X!))[-2:] + str(int(!NAD83Y!))[-2:]"
 
     # Selection expressions
-    manhole_main_exception = "(WATERTYPE = 'SW' or OWNEDBY = -2) AND FACILITYID IS NULL"
-    cleanout_exception = "OWNEDBY = -2 AND FACILITYID IS NULL"
+    manhole_main_exception = "FACILITYID IS NULL AND (WATERTYPE = 'SW' OR OWNEDBY = -2)"
+    cleanout_exception = "FACILITYID IS NULL"
     inlet_exception = "FACILITYID IS NULL"
 
     # Environment settings
     arcpy.env.overwriteOutput = True
 
-    @logging_lines("Sewer")
+    @logging_lines("Sewer Attribution", 0)
     def SewerAttribution():
         """Attribute sewer assets
 
@@ -114,14 +114,16 @@ def GeospatialAttributor():
         quarter_sections = os.path.join(cadastral_dataset, "PLSSQuarterSection")
 
         # Facility ID naming for sewer manholes
-        @logging_lines("Manhole Facility IDs")
+        @logging_lines("Manhole Facility IDs", 2)
         def NamingManholes():
 
             # Select all null manholes and quarter sections that contain it
-            selected_manholes = arcpy.SelectLayerByAttribute_management(sewer_manholes, "NEW_SELECTION", "FACILITYID IS NULL AND OWNEDBY = 1 AND STAGE = 0")
+            selected_manholes = arcpy.SelectLayerByAttribute_management(sewer_manholes, "NEW_SELECTION", "FACILITYID IS NULL AND STAGE = 0")
             selected_quarter_sections = arcpy.SelectLayerByLocation_management(quarter_sections, "COMPLETELY_CONTAINS", selected_manholes)
 
-            if int(arcpy.GetCount_management(selected_manholes).getOutput(0)) > 0:
+            selected_manholes_count = arcpy.GetCount_management(selected_manholes).getOutput(0)
+            if int(selected_manholes_count) > 0:
+                logger.info(f"------count={selected_manholes_count}")
 
                 # Create a list of quarter sections then sanitize it
                 quarter_section_list = []
@@ -133,7 +135,7 @@ def GeospatialAttributor():
                 # Select all relevant manholes in the current quarter section
                 global section
                 for section in sanitized_quarter_section_list:
-                    selected_manholes_in_section = arcpy.SelectLayerByAttribute_management(sewer_manholes, "NEW_SELECTION", f"FACILITYID LIKE '%{section[1]}%' AND OWNEDBY = 1 AND STAGE = 0")
+                    selected_manholes_in_section = arcpy.SelectLayerByAttribute_management(sewer_manholes, "NEW_SELECTION", f"FACILITYID LIKE '%{section[1]}%' AND STAGE = 0")
 
                     # For the current quarter section, find the highest last three digits of selected manholes
                     with arcpy.da.SearchCursor(selected_manholes_in_section, "FACILITYID") as maximum_cursor:
@@ -144,7 +146,7 @@ def GeospatialAttributor():
                     # Select the null manholes inside the current quarter section
                     selected_quarter_sections = arcpy.SelectLayerByAttribute_management(quarter_sections, "NEW_SELECTION", f"SEWMAP LIKE '%{section[0]}%'")
                     selected_within_manholes = arcpy.SelectLayerByLocation_management(sewer_manholes, "COMPLETELY_WITHIN", selected_quarter_sections)
-                    selected_null_manholes = arcpy.SelectLayerByAttribute_management(selected_within_manholes, "SUBSET_SELECTION", "FACILITYID IS NULL AND OWNEDBY = 1 AND STAGE = 0")
+                    selected_null_manholes = arcpy.SelectLayerByAttribute_management(selected_within_manholes, "SUBSET_SELECTION", "FACILITYID IS NULL AND STAGE = 0")
 
                     # Calculate the Facility IDs of each null manhole selected in the current quarter section, incrementing the last three digits per feature using the function below (indentation is correct)
                     increment_function = """index = 0
@@ -165,8 +167,8 @@ def increment():
                     arcpy.CalculateField_management(selected_null_manholes, "FACILITYID", f"increment()", "PYTHON3", increment_function)
                     arcpy.Delete_management("SewerManholes")
 
-        # Facility ID naming for sewer gravity mains
-        @logging_lines("Sewer Mains")
+        # Facility ID, TOMH, FROMMH naming for sewer gravity mains
+        @logging_lines("Sewer Main Attribution", 2)
         def SewerMains():
             """Calculate several fields for sewer gravity mains:
 
@@ -183,14 +185,14 @@ def increment():
             end_join = os.path.join(attributor, "EndJoin")
 
             # Select all gravity mains to be calculated
-            selected_mains = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "FACILITYID IS NULL AND OWNEDBY = 1 AND STAGE = 0 AND "
-                                                                                                   "(WATERTYPE = 'SS' OR WATERTYPE = 'CB')")
+            selected_mains = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "(FACILITYID IS NULL OR TOMH IS NULL OR FROMMH IS NULL) AND (WATERTYPE = 'SS' OR WATERTYPE = 'CB')")
 
-            if int(arcpy.GetCount_management(selected_mains).getOutput(0)) > 0:
+            selected_mains_count = arcpy.GetCount_management(selected_mains).getOutput(0)
+            if int(selected_mains_count) > 0:
+                logger.info(f"------count={selected_mains_count}")
 
                 # Spatially join gravity main start endpoints to manholes
-                selected_mains = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "FACILITYID IS NULL AND FROMMH IS NULL AND STAGE = 0 AND "
-                                                                                                       "OWNEDBY = 1 AND (WATERTYPE = 'SS' OR WATERTYPE = 'CB')")
+                selected_mains = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "FROMMH IS NULL AND (WATERTYPE = 'SS' OR WATERTYPE = 'CB')")
                 arcpy.FeatureVerticesToPoints_management(selected_mains, start_vertices, "START")
                 upstream_manholes = arcpy.SelectLayerByLocation_management(sewer_manholes, "INTERSECT", start_vertices)
                 start_join_map = fr"ORIG_FID 'ORIG_FID' true true false 255 Text 0 0,First,#,{start_vertices},ORIG_FID,-1,-1;FROMMH 'FROMMH' true true false 255 Text 0 0,First,#,{upstream_manholes},FACILITYID,-1,-1"
@@ -202,10 +204,10 @@ def increment():
                     for row in cursor:
                         selected_mains = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", f"OBJECTID = {row[0]}")
                         arcpy.CalculateField_management(selected_mains, "FROMMH", f"'{row[1]}'", "PYTHON3")
-                        logger.info(f"{row[1]}")
+                        print(f"---------{row[0]}")
 
                 # Spatially join gravity main start endpoints to manholes
-                selected_mains = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "(TOMH IS NULL OR TOMH = '2207AB032') AND STAGE = 0 AND OWNEDBY = 1 AND (WATERTYPE = 'SS' or WATERTYPE = 'CB')")
+                selected_mains = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "TOMH IS NULL AND (WATERTYPE = 'SS' or WATERTYPE = 'CB')")
                 arcpy.FeatureVerticesToPoints_management(selected_mains, end_vertices, "END")
                 downstream_manholes = arcpy.SelectLayerByLocation_management(sewer_manholes, "INTERSECT", end_vertices)
                 end_join_map = fr"ORIG_FID 'ORIG_FID' true true false 255 Text 0 0,First,#,{end_vertices},ORIG_FID,-1,-1;TOMH 'TOMH' true true false 255 Text 0 0,First,#,{downstream_manholes},FACILITYID,-1,-1"
@@ -217,36 +219,44 @@ def increment():
                     for row in cursor:
                         selected_to_manholes = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", f"OBJECTID = {row[0]}")
                         arcpy.CalculateField_management(selected_to_manholes, "TOMH", f"'{row[1]}'", "PYTHON3")
+                        print(f"---------{row[0]}")
 
                 # Finalize facility id
-                selected_mains_final = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "FACILITYID IS NULL AND STAGE = 0 AND OWNEDBY = 1 AND (WATERTYPE = 'SS' OR WATERTYPE = 'CB')")
+                selected_mains_final = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "FACILITYID IS NULL AND (WATERTYPE = 'SS' OR WATERTYPE = 'CB')")
                 arcpy.CalculateField_management(selected_mains_final, "FACILITYID", "!FROMMH! + '-' + !TOMH!", "PYTHON3")
 
-        @logging_lines("Storm Mains")
+        @logging_lines("Storm Mains Attribution", 2)
         def StormMains():
             """Calculate the FROMMH/TOMH fields from the FACILITYID as the storm manholes ID is much simpler than gravity mains."""
+            selected_storm_mains = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "(FROMMH IS NULL OR TOMH IS NULL) AND WATERTYPE = 'SW'")
 
-            selected_storm_mains = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "OWNEDBY = 1 AND STAGE = 0 AND WATERTYPE = 'SW' AND (FROMMH IS NULL OR TOMH IS NULL)")
-
-            if int(arcpy.GetCount_management(selected_storm_mains).getOutput(0)) > 0:
+            selected_storm_mains_count = arcpy.GetCount_management(selected_storm_mains).getOutput(0)
+            if int(selected_storm_mains_count) > 0:
+                logger.info(f"---count={selected_storm_mains_count}")
                 arcpy.CalculateFields_management(selected_storm_mains, "PYTHON3", [["FROMMH", "!FACILITYID![:12]"],
                                                                                    ["TOMH", "!FACILITYID![-12:]"]])
 
-        @logging_lines("Facility ID Exceptions")
+        @logging_lines("Facility ID Exceptions", 2)
         def NamingExceptions(exception):
+            """Use a list of exceptions to calculate Facility ID safely"""
             selected_from_exception = arcpy.SelectLayerByAttribute_management("asset_temp", "NEW_SELECTION", exception)
 
-            if int(arcpy.GetCount_management(selected_from_exception).getOutput(0)) > 0:
+            selected_from_exception_count = arcpy.GetCount_management(selected_from_exception).getOutput(0)
+            if int(selected_from_exception_count) > 0:
+                logger.info(f"---count={selected_from_exception_count}")
                 arcpy.CalculateField_management(selected_from_exception, "FACILITYID", "!SPATIALID!", "PYTHON3")
 
         # Attribution
         for asset in sewer_assets:
-            logger.info(f"{asset[2]} Start")
+            logger.info(f"---{asset[2]} Start")
             arcpy.MakeFeatureLayer_management(asset[0], "asset_temp")
             selected_nulls = arcpy.SelectLayerByAttribute_management("asset_temp", "NEW_SELECTION", f"FACILITYID IS NULL")
 
             # Spatial ID loops
-            if int(arcpy.GetCount_management(selected_nulls).getOutput(0)) > 0:
+            selected_nulls_count = arcpy.GetCount_management(selected_nulls).getOutput(0)
+            if int(selected_nulls_count) > 0:
+                logger.info(f"---count={selected_nulls_count}")
+
                 if asset[1] == "point":
                     arcpy.CalculateGeometryAttributes_management(selected_nulls, [["NAD83X", "POINT_X"],
                                                                                   ["NAD83Y", "POINT_Y"]])
@@ -272,9 +282,9 @@ def increment():
                     NamingExceptions(cleanout_exception)
                 elif asset[0] == sewer_inlet:
                     NamingExceptions(inlet_exception)
-            logger.info(f"{asset[2]} Complete")
+            logger.info(f"---{asset[2]} Complete")
 
-    @logging_lines("Storm")
+    @logging_lines("Storm", 0)
     def StormAttribution():
         """Takes the list of stormwater assets and their type then uses it to calculate the geometry and spatial fields."""
 
@@ -297,29 +307,31 @@ def increment():
         for asset in storm_assets:
 
             # Looping through the list
-            logger.info(f"{asset[2]} Start")
+            logger.info(f"---{asset[2]} Start")
             arcpy.MakeFeatureLayer_management(asset[0], "asset_temp")
-            selection_by_date = arcpy.SelectLayerByAttribute_management("asset_temp", "NEW_SELECTION", f"LASTEDITOR <> 'COSPW' and FACILITYID IS NULL")
+            selected_nulls = arcpy.SelectLayerByAttribute_management("asset_temp", "NEW_SELECTION", f"FACILITYID IS NULL")
 
-            if int(arcpy.GetCount_management(selection_by_date).getOutput(0)) > 0:
+            count = arcpy.GetCount_management(selected_nulls).getOutput(0)
+            if int(count) > 0:
+                logger.info(f"---{count}")
                 if asset[1] == "line":
-                    arcpy.CalculateGeometryAttributes_management(selection_by_date, [["NAD83XSTART", "LINE_START_X"],
-                                                                                     ["NAD83YSTART", "LINE_START_Y"],
-                                                                                     ["NAD83XEND", "LINE_END_X"],
-                                                                                     ["NAD83YEND", "LINE_END_Y"]])
-                    arcpy.CalculateFields_management(selection_by_date, "PYTHON3", [["SPATIALSTART", spatial_start],
-                                                                                    ["SPATIALEND", spatial_end],
-                                                                                    ["SPATIALID", spatial_id_line_storm],
-                                                                                    ["FACILITYID", spatial_id_line_storm]])
+                    arcpy.CalculateGeometryAttributes_management(selected_nulls, [["NAD83XSTART", "LINE_START_X"],
+                                                                                  ["NAD83YSTART", "LINE_START_Y"],
+                                                                                  ["NAD83XEND", "LINE_END_X"],
+                                                                                  ["NAD83YEND", "LINE_END_Y"]])
+                    arcpy.CalculateFields_management(selected_nulls, "PYTHON3", [["SPATIALSTART", spatial_start],
+                                                                                 ["SPATIALEND", spatial_end],
+                                                                                 ["SPATIALID", spatial_id_line_storm],
+                                                                                 ["FACILITYID", spatial_id_line_storm]])
                 elif asset[1] == "point":
-                    arcpy.CalculateGeometryAttributes_management(selection_by_date, [["NAD83X", "POINT_X"],
-                                                                                     ["NAD83Y", "POINT_Y"]])
-                    arcpy.CalculateFields_management(selection_by_date, "PYTHON3", [["SPATIALID", spatial_id_point],
-                                                                                    ["FACILITYID", spatial_id_point]])
+                    arcpy.CalculateGeometryAttributes_management(selected_nulls, [["NAD83X", "POINT_X"],
+                                                                                  ["NAD83Y", "POINT_Y"]])
+                    arcpy.CalculateFields_management(selected_nulls, "PYTHON3", [["SPATIALID", spatial_id_point],
+                                                                                 ["FACILITYID", spatial_id_point]])
 
             logger.info(f"{asset[2]} Complete")
 
-    @logging_lines("GPS")
+    @logging_lines("GPS", 0)
     def GPSAttribution():
         """Append new GPS shapefiles in the Y: drive to the gpsNode feature class on the SDE then calculate their facility ID
 
