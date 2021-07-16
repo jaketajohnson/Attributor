@@ -68,7 +68,7 @@ def GeospatialAttributor():
     logger.info("Script Execution Start")
 
     # Paths
-    geodatabase_services_folder = r"F:\Shares\FGDB_Services"
+    geodatabase_services_folder = "Z:\\"
     sde = os.path.join(geodatabase_services_folder, r"DatabaseConnections\COSPW@imSPFLD@MCWINTCWDB.sde")
     data = os.path.join(geodatabase_services_folder, "Data")
 
@@ -185,50 +185,51 @@ def increment():
             end_join = os.path.join(attributor, "EndJoin")
 
             # Select all gravity mains to be calculated
-            selected_mains = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "(FACILITYID IS NULL OR TOMH IS NULL OR FROMMH IS NULL) AND (WATERTYPE = 'SS' OR WATERTYPE = 'CB')")
+            selected_mains = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "(FACILITYID IS NULL OR TOMH IS NULL OR FROMMH IS NULL) AND STAGE = 0 AND (WATERTYPE = 'SS' OR WATERTYPE = 'CB')")
 
             selected_mains_count = arcpy.GetCount_management(selected_mains).getOutput(0)
             if int(selected_mains_count) > 0:
                 logger.info(f"------count={selected_mains_count}")
 
-                # Spatially join gravity main start endpoints to manholes
-                selected_mains = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "FROMMH IS NULL AND (WATERTYPE = 'SS' OR WATERTYPE = 'CB')")
-                arcpy.FeatureVerticesToPoints_management(selected_mains, start_vertices, "START")
-                upstream_manholes = arcpy.SelectLayerByLocation_management(sewer_manholes, "INTERSECT", start_vertices)
-                start_join_map = fr"ORIG_FID 'ORIG_FID' true true false 255 Text 0 0,First,#,{start_vertices},ORIG_FID,-1,-1;FROMMH 'FROMMH' true true false 255 Text 0 0,First,#,{upstream_manholes},FACILITYID,-1,-1"
-                arcpy.SpatialJoin_analysis(upstream_manholes, start_vertices, start_join, "JOIN_ONE_TO_MANY", "KEEP_COMMON", start_join_map)
+                # Spatially join gravity main start endpoints to manholes and fittings
+                selected_null_frommh = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "FROMMH IS NULL AND STAGE = 0 AND (WATERTYPE = 'SS' OR WATERTYPE = 'CB')")
+                arcpy.FeatureVerticesToPoints_management(selected_null_frommh, start_vertices, "START")
+                upstream_features = arcpy.SelectLayerByLocation_management(sewer_manholes, "INTERSECT", start_vertices)
+                start_join_map = fr"ORIG_FID 'ORIG_FID' true true false 255 Text 0 0,First,#,{start_vertices},\
+                                    ORIG_FID,-1,-1;FROMMH 'FROMMH' true true false 255 Text 0 0,First,#,{upstream_features},FACILITYID,-1,-1"
+                arcpy.SpatialJoin_analysis(upstream_features, start_vertices, start_join, "JOIN_ONE_TO_MANY", "KEEP_COMMON", start_join_map)
                 arcpy.MakeFeatureLayer_management(start_join, "StartJoin")
 
                 # Loop through start vertices and calculate FROMMH field
                 with arcpy.da.SearchCursor("StartJoin", ["ORIG_FID", "FROMMH"]) as cursor:
                     for row in cursor:
-                        selected_mains = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", f"OBJECTID = {row[0]}")
-                        arcpy.CalculateField_management(selected_mains, "FROMMH", f"'{row[1]}'", "PYTHON3")
+                        selected_target_main = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", f"OBJECTID = {row[0]}")
+                        arcpy.CalculateField_management(selected_target_main, "FROMMH", f"'{row[1]}'", "PYTHON3")
                         print(f"---------{row[0]}")
 
-                # Spatially join gravity main start endpoints to manholes
-                selected_mains = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "TOMH IS NULL AND (WATERTYPE = 'SS' or WATERTYPE = 'CB')")
-                arcpy.FeatureVerticesToPoints_management(selected_mains, end_vertices, "END")
-                downstream_manholes = arcpy.SelectLayerByLocation_management(sewer_manholes, "INTERSECT", end_vertices)
-                end_join_map = fr"ORIG_FID 'ORIG_FID' true true false 255 Text 0 0,First,#,{end_vertices},ORIG_FID,-1,-1;TOMH 'TOMH' true true false 255 Text 0 0,First,#,{downstream_manholes},FACILITYID,-1,-1"
-                arcpy.SpatialJoin_analysis(downstream_manholes, end_vertices, end_join, "JOIN_ONE_TO_MANY", "KEEP_COMMON", end_join_map)
+                # Spatially join gravity main start endpoints to manholes and fittings
+                selected_null_tomh = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "TOMH IS NULL AND STAGE = 0 AND (WATERTYPE = 'SS' OR WATERTYPE = 'CB')")
+                arcpy.FeatureVerticesToPoints_management(selected_null_tomh, end_vertices, "END")
+                downstream_features = arcpy.SelectLayerByLocation_management(sewer_manholes, "INTERSECT", end_vertices)
+                end_join_map = fr"ORIG_FID 'ORIG_FID' true true false 255 Text 0 0,First,#,{end_vertices},ORIG_FID,-1,-1;TOMH 'TOMH' true true false 255 Text 0 0,First,#,{downstream_features},FACILITYID,-1,-1"
+                arcpy.SpatialJoin_analysis(downstream_features, end_vertices, end_join, "JOIN_ONE_TO_MANY", "KEEP_COMMON", end_join_map)
                 arcpy.MakeFeatureLayer_management(end_join, "EndJoin")
 
                 # Loop through start vertices and calculate TOMH field
                 with arcpy.da.SearchCursor("EndJoin", ["ORIG_FID", "TOMH"]) as cursor:
                     for row in cursor:
-                        selected_to_manholes = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", f"OBJECTID = {row[0]}")
-                        arcpy.CalculateField_management(selected_to_manholes, "TOMH", f"'{row[1]}'", "PYTHON3")
+                        selected_target_main = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", f"OBJECTID = {row[0]}")
+                        arcpy.CalculateField_management(selected_target_main, "TOMH", f"'{row[1]}'", "PYTHON3")
                         print(f"---------{row[0]}")
 
                 # Finalize facility id
-                selected_mains_final = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "FACILITYID IS NULL AND (WATERTYPE = 'SS' OR WATERTYPE = 'CB')")
+                selected_mains_final = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "FACILITYID IS NULL AND STAGE = 0 AND (WATERTYPE = 'SS' OR WATERTYPE = 'CB')")
                 arcpy.CalculateField_management(selected_mains_final, "FACILITYID", "!FROMMH! + '-' + !TOMH!", "PYTHON3")
 
         @logging_lines("Storm Mains Attribution", 2)
         def StormMains():
             """Calculate the FROMMH/TOMH fields from the FACILITYID as the storm manholes ID is much simpler than gravity mains."""
-            selected_storm_mains = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "(FROMMH IS NULL OR TOMH IS NULL) AND WATERTYPE = 'SW'")
+            selected_storm_mains = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "(FROMMH IS NULL OR TOMH IS NULL) AND STAGE = 0 AND WATERTYPE = 'SW'")
 
             selected_storm_mains_count = arcpy.GetCount_management(selected_storm_mains).getOutput(0)
             if int(selected_storm_mains_count) > 0:
@@ -329,7 +330,7 @@ def increment():
                     arcpy.CalculateFields_management(selected_nulls, "PYTHON3", [["SPATIALID", spatial_id_point],
                                                                                  ["FACILITYID", spatial_id_point]])
 
-            logger.info(f"{asset[2]} Complete")
+            logger.info(f"---{asset[2]} Complete")
 
     @logging_lines("GPS", 0)
     def GPSAttribution():
@@ -344,7 +345,7 @@ def increment():
         # Paths
         engineering = os.path.join(sde, "SewerEngineering")
         gps_points = os.path.join(engineering, "gpsNode")
-        shape_folder = "Y:\\"
+        shape_folder = "V:\\"
 
         # Grab last updated date from a text file
         last_updated_file = open("last_updated.txt", "r")
