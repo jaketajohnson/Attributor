@@ -5,11 +5,23 @@
 
  DESCRIPTION
 
-    * Attributes NAD83 coordinates for lines and points
-    * For line assets, creates a SPATIALSTART and SPATIALEND using the NAD83 attributes then creates a SPATIALID from those
-    * For point assets, creates a SPATIALID from NAD83 coordinates
-    * Assigns FROMMH and TOMH using assets that intersect the start and end points of the gravity mains
-    * Creates a FACILITYID using FROMMH and TOMH if applicable
+    Features
+    * Organized by feature
+    * Calculates both point and line features
+    * Fully automated
+    * Checks only null values and only performs an operation if more than 0 features need operated on
+    * Comprehensive logging
+    * Error logging
+
+    1. For point assets:
+        * Calculates NAD83X and NAD83Y geometry fields
+        * Calculates a Spatial ID using geometry fields
+        * Calculates a Facility ID using the current map page number and the highest existing 3-digit value plus one (ie if the existing high value is 1414GH065 the new features will start from ...066 onwards)
+    2. For line assets:
+        * Calculates NAD83XSTART, NAD83YSTART, NAD83XEND, NAD83YEND geometry fields
+        * Calculates Spatial Start, Spatial End, and Spatial ID fields using geometry fields
+        * Calculates FROMMH and TOMH fields using upstream/downstream vertices that intersect manholes
+        * Uses FROMM and TOMH to create a new Facility ID
 
  REQUIREMENTS
 
@@ -37,10 +49,6 @@ sewer_mains = os.path.join(sewer_dataset, "ssGravityMain")
 sewer_manholes = os.path.join(sewer_dataset, "ssManhole")
 sewer_cleanouts = os.path.join(sewer_dataset, "ssCleanout")
 sewer_inlets = os.path.join(sewer_dataset, "ssInlet")
-sewer_assets = [[sewer_manholes, "point", "Sewer Manholes"],
-                [sewer_mains, "line", "Sewer Mains"],
-                [sewer_cleanouts, "point", "Sewer Cleanouts"],
-                [sewer_inlets, "point", "Sewer Inlets"]]
 cadastral_dataset = os.path.join(sde, "CadastralReference")
 quarter_sections = os.path.join(cadastral_dataset, "PLSSQuarterSection")
 
@@ -88,7 +96,6 @@ def template_spatial_calculator(input_feature, layer_name, field_name, expressio
 @Logging.insert("Manholes", 1)
 def manholes():
     """Calculate fields for sewer manholes"""
-
     # Geometry fields
     geometry_fields_to_calculate = [
         ["manholes_null_x", "NAD83X", "POINT_X"],
@@ -166,7 +173,6 @@ def increment():
 @Logging.insert("Inlets", 1)
 def inlets():
     """Calculate fields for sewer manholes"""
-
     # Geometry fields
     geometry_fields_to_calculate = [
         ["inlets_null_x", "NAD83X", "POINT_X"],
@@ -180,8 +186,8 @@ def inlets():
 
     # Spatial fields
     spatial_fields_to_calculate = [
-        ["inlets_null_spatial_id", "SPATIALID", "!SPATIALID!"
-         "inlets_null_facility_id", "FACILITYID", "!SPATIALID!"]
+        ["inlets_null_spatial_id", "SPATIALID", spatial_id_point],
+        ["inlets_null_facility_id", "FACILITYID", "!SPATIALID!"]
     ]
 
     Logging.logger.info("------START Spatial Calculation")
@@ -193,7 +199,6 @@ def inlets():
 @Logging.insert("Cleanouts", 1)
 def cleanouts():
     """Calculate fields for sewer manholes"""
-
     # Geometry fields
     geometry_fields_to_calculate = [
         ["cleanouts_null_x", "NAD83X", "POINT_X"],
@@ -207,7 +212,7 @@ def cleanouts():
 
     # Spatial fields
     spatial_fields_to_calculate = [
-        ["cleanouts_spatial_id", "SPATIALID", "SPATIALID"]
+        ["cleanouts_spatial_id", "SPATIALID", spatial_id_point]
     ]
 
     Logging.logger.info("------START Spatial Calculation")
@@ -219,7 +224,6 @@ def cleanouts():
 @Logging.insert("Gravity Mains", 1)
 def gravity_mains():
     """Calculate fields for sewer gravity mains"""
-
     # Geometry fields
     geometry_fields_to_calculate = [
         ["mains_null_x_start", "NAD83XSTART", "LINE_START_X"],

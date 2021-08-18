@@ -5,11 +5,22 @@
 
  DESCRIPTION
 
-    * Attributes NAD83 coordinates for lines and points
-    * For line assets, creates a SPATIALSTART and SPATIALEND using the NAD83 attributes then creates a SPATIALID from those
-    * For point assets, creates a SPATIALID from NAD83 coordinates
-    * Assigns FROMMH and TOMH using assets that intersect the start and end points of the gravity mains
-    * Creates a FACILITYID using FROMMH and TOMH if applicable
+
+    Features
+    * Organized by feature
+    * Calculates both point and line features
+    * Fully automated
+    * Checks only null values and only performs an operation if more than 0 features need operated on
+    * Comprehensive logging
+    * Error logging
+
+    1. For point assets:
+        * Calculates NAD83X and NAD83Y geometry fields
+        * Calculates a Spatial ID and Facility ID using geometry fields
+    2. For line assets:
+        * Calculates NAD83XSTART, NAD83YSTART, NAD83XEND, NAD83YEND geometry fields
+        * Todo: Calculates FROMMH and TOMH where applicable
+        * Calculates Spatial Start, Spatial End, Spatial ID, and Facility ID fields using geometry fields
 
  REQUIREMENTS
 
@@ -35,18 +46,11 @@ storm_cleanouts = os.path.join(storm_dataset, "swCleanout")
 storm_inlets = os.path.join(storm_dataset, "swInlet")
 storm_discharges = os.path.join(storm_dataset, "swDischargePoint")
 storm_culverts = os.path.join(storm_dataset, "swCulvert")
-storm_assets = [[storm_mains, "line", "Storm Mains"],
-                [storm_manholes, "point", "Storm Manholes"],
-                [storm_cleanouts, "point", "Storm Cleanouts"],
-                [storm_inlets, "point", "Storm Inlets"],
-                [storm_discharges, "point", "Storm Discharge Points"],
-                [storm_culverts, "line", "Storm Culverts"]]
 
 # Field calculator expressions
 spatial_start = "str(int(!NAD83XSTART!))[2:4] + str(int(!NAD83YSTART!))[2:4] + '-' + str(int(!NAD83XSTART!))[4] + " \
                 "str(int(!NAD83YSTART!))[4] + '-' + str(int(!NAD83XSTART!))[-2:] + str(int(!NAD83YSTART!))[-2:]"
 spatial_end = "str(int(!NAD83XEND!))[2:4] + str(int(!NAD83YEND!))[2:4] + '-' + str(int(!NAD83XEND!))[4] + str(int(!NAD83YEND!))[4] + '-' + str(int(!NAD83XEND!))[-2:] + str(int(!NAD83YEND!))[-2:]"
-spatial_id_line_sewer = "!SPATAILSTART! + '_' + !SPATAILEND!"  # Yes it's seriously misspelled
 spatial_id_line_storm = "!SPATIALSTART! + '_' + !SPATIALEND!"
 spatial_id_point = "str(int(!NAD83X!))[2:4] + str(int(!NAD83Y!))[2:4] + '-' + str(int(!NAD83X!))[4] + str(int(!NAD83Y!))[4] + '-' + str(int(!NAD83X!))[-2:] + str(int(!NAD83Y!))[-2:]"
 
@@ -75,10 +79,9 @@ def template_spatial_calculator(input_feature, layer_name, field_name, expressio
         Logging.logger.info(f"---------PASS {field_name} - COUNT={selected_nulls_count}")
 
 
-@Logging.insert("Discharge Points", 1)
+@Logging.insert("Manholes", 1)
 def manholes():
     """Calculate fields for sewer manholes"""
-
     # Geometry fields
     geometry_fields_to_calculate = [
         ["manholes_null_x", "NAD83X", "POINT_X"],
@@ -92,8 +95,8 @@ def manholes():
 
     # Spatial fields
     spatial_fields_to_calculate = [
-        ["manholes_spatial_id", "SPATIALID", "SPATIALID"],
-        ["manholes_facility_id", "FACILITYID", "SPATIALID"]
+        ["manholes_spatial_id", "SPATIALID", spatial_id_point],
+        ["manholes_facility_id", "FACILITYID", "!SPATIALID!"]
     ]
 
     Logging.logger.info("------START Spatial Calculation")
@@ -105,7 +108,6 @@ def manholes():
 @Logging.insert("Inlets", 1)
 def inlets():
     """Calculate fields for sewer manholes"""
-
     # Geometry fields
     geometry_fields_to_calculate = [
         ["inlets_null_x", "NAD83X", "POINT_X"],
@@ -119,7 +121,7 @@ def inlets():
 
     # Spatial fields
     spatial_fields_to_calculate = [
-        ["inlets_spatial_id", "SPATIALID", "!SPATIALID!"],
+        ["inlets_spatial_id", "SPATIALID", spatial_id_point],
         ["inlets_facility_id", "FACILITYID", "!SPATIALID!"]
     ]
 
@@ -129,10 +131,35 @@ def inlets():
     Logging.logger.info("------FINISH Spatial Calculation")
 
 
-@Logging.insert("Discharge Points", 1)
-def discharge():
+@Logging.insert("Cleanouts", 1)
+def cleanouts():
     """Calculate fields for sewer manholes"""
+    # Geometry fields
+    geometry_fields_to_calculate = [
+        ["cleanouts_null_x", "NAD83X", "POINT_X"],
+        ["cleanouts_null_y", "NAD83Y", "POINT_Y"]
+        ]
 
+    Logging.logger.info("------START Geometry Calculation")
+    for field in geometry_fields_to_calculate:
+        template_geometry_calculator(storm_inlets, field[0], field[1], field[2])
+    Logging.logger.info("------FINISH Geometry Calculation")
+
+    # Spatial fields
+    spatial_fields_to_calculate = [
+        ["cleanouts_spatial_id", "SPATIALID", spatial_id_point],
+        ["cleanouts_facility_id", "FACILITYID", "!SPATIALID!"]
+    ]
+
+    Logging.logger.info("------START Spatial Calculation")
+    for field in spatial_fields_to_calculate:
+        template_spatial_calculator(storm_inlets, field[0], field[1], field[2])
+    Logging.logger.info("------FINISH Spatial Calculation")
+
+
+@Logging.insert("Discharge Points", 1)
+def discharges():
+    """Calculate fields for sewer manholes"""
     # Geometry fields
     geometry_fields_to_calculate = [
         ["discharge_null_x", "NAD83X", "POINT_X"],
@@ -146,7 +173,7 @@ def discharge():
 
     # Spatial fields
     spatial_fields_to_calculate = [
-        ["discharge_spatial_id", "SPATIALID", "!SPATIALID!"],
+        ["discharge_spatial_id", "SPATIALID", spatial_id_point],
         ["discharge_facility_id", "FACILITYID", "!SPATIALID!"]
     ]
 
@@ -156,35 +183,65 @@ def discharge():
     Logging.logger.info("------FINISH Spatial Calculation")
 
 
+@Logging.insert("Culverts", 1)
+def culverts():
+    """Calculate fields for sewer gravity mains"""
+    # Geometry fields
+    geometry_fields_to_calculate = [
+        ["culverts_null_x_start", "NAD83XSTART", "LINE_START_X"],
+        ["culverts_null_y_start", "NAD83YSTART", "LINE_START_Y"],
+        ["culverts_null_x_end", "NAD83XEND", "LINE_END_X"],
+        ["culverts_null_y_end", "NAD83YEND", "LINE_END_Y"]]
+
+    Logging.logger.info("------START Geometry Calculation")
+    for field in geometry_fields_to_calculate:
+        template_geometry_calculator(storm_mains, field[0], field[1], field[2])
+    Logging.logger.info("------FINISH Geometry Calculation")
+
+    # Spatial fields
+    spatial_fields_to_calculate = [
+        ["culverts_null_spatial_start", "SPATIALSTART", spatial_start],
+        ["culverts_null_spatial_end", "SPATIALEND", spatial_end],
+        ["culverts_null_spatial_id", "SPATIALID", spatial_id_line_storm],
+        ["culverts_null_facility_id", "FACILITYID", spatial_id_line_storm]
+    ]
+
+    Logging.logger.info("------START Spatial Calculation")
+    for field in spatial_fields_to_calculate:
+        template_spatial_calculator(storm_mains, field[0], field[1], field[2])
+    Logging.logger.info("------FINISH Spatial Calculation")
+
+
 @Logging.insert("Gravity Mains", 1)
 def gravity_mains():
     """Calculate fields for sewer gravity mains"""
+    # Geometry fields
     geometry_fields_to_calculate = [
         ["mains_null_x_start", "NAD83XSTART", "LINE_START_X"],
         ["mains_null_y_start", "NAD83YSTART", "LINE_START_Y"],
         ["mains_null_x_end", "NAD83XEND", "LINE_END_X"],
         ["mains_null_y_end", "NAD83YEND", "LINE_END_Y"]]
 
-    # Geometry fields
     Logging.logger.info("------START Geometry Calculation")
     for field in geometry_fields_to_calculate:
         template_geometry_calculator(storm_mains, field[0], field[1], field[2])
     Logging.logger.info("------FINISH Geometry Calculation")
 
+    # Spatial fields
     spatial_fields_to_calculate = [
-        ["mains_null_spatial_start", "SPATAILSTART", spatial_start],
-        ["mains_null_spatial_end", "SPATAILEND", spatial_end],
-        ["mains_null_spatial_id", "SPATIALID", spatial_id_line_sewer],
-        ["mains_null_facility_id", "FACILITYID", spatial_id_line_sewer]
+        ["mains_null_spatial_start", "SPATIALSTART", spatial_start],
+        ["mains_null_spatial_end", "SPATIALEND", spatial_end],
+        ["mains_null_spatial_id", "SPATIALID", spatial_id_line_storm],
+        ["mains_null_facility_id", "FACILITYID", spatial_id_line_storm]
     ]
 
-    # Spatial fields
     Logging.logger.info("------START Spatial Calculation")
     for field in spatial_fields_to_calculate:
         template_spatial_calculator(storm_mains, field[0], field[1], field[2])
     Logging.logger.info("------FINISH Spatial Calculation")
 
-    # Paths
+    # Commented out because Storm FROMMH and TOMH fields need to be lengthened from 11 to 12 characters
+    """"# Paths
     attributor = os.path.join(data, "Attributor.gdb")
     start_vertices = os.path.join(attributor, "StormStartVertices")
     start_join = os.path.join(attributor, "StormStartJoin")
@@ -231,7 +288,7 @@ def gravity_mains():
                 arcpy.CalculateField_management(selected_target_main, "TOMH", f"'{row[1]}'", "PYTHON3")
         Logging.logger.info(f"---------FINISH TOMH - COUNT={selected_null_tomh_count}")
     else:
-        Logging.logger.info(f"---------PASS TOMH - COUNT={selected_null_tomh_count}")
+        Logging.logger.info(f"---------PASS TOMH - COUNT={selected_null_tomh_count}")"""
 
     # Facility ID
     facility_id_to_calculate = ["mains_null_facilityid", "FACILITYID", "!SPATIALID!"]
@@ -242,9 +299,11 @@ if __name__ == "__main__":
     traceback_info = traceback.format_exc()
     try:
         Logging.logger.info("Script Execution Started")
-        inlets()
         manholes()
-        discharge()
+        inlets()
+        cleanouts()
+        discharges()
+        culverts()
         gravity_mains()
         Logging.logger.info("Script Execution Finished")
     except (IOError, NameError, KeyError, IndexError, TypeError, UnboundLocalError, ValueError):

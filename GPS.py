@@ -36,7 +36,6 @@ shape_folder = "V:\\"
 spatial_id_point = "str(int(!NAD83X!))[2:4] + str(int(!NAD83Y!))[2:4] + '-' + str(int(!NAD83X!))[4] + str(int(!NAD83Y!))[4] + '-' + str(int(!NAD83X!))[-2:] + str(int(!NAD83Y!))[-2:]"
 
 
-@Logging.insert("GPS", 1)
 def gps_attribution():
     """Append new GPS shapefiles in the Y: drive to the gpsNode feature class on the SDE then calculate their facility ID
 
@@ -50,7 +49,7 @@ def gps_attribution():
     last_updated_file = open("last_updated.txt", "r")
     last_updated = [last_updated_file.read()]
     datetime_format = "%Y-%m-%d"
-    Logging.logger.info(f"Last updated: {last_updated[0]}")
+    Logging.logger.info(f"---Last updated: {last_updated[0]}")
 
     # Create a list of folders to be appended
     folder_list = []
@@ -59,7 +58,9 @@ def gps_attribution():
          datetime.datetime.strptime(last_updated[0], datetime_format) < datetime.datetime.strptime(folders, datetime_format)]  # Add any folder without a letter in it
 
     # Append new folders
-    if len(folder_list) > 0:
+    folder_list_length = len(folder_list)
+    if folder_list_length > 0:
+        Logging.logger.info(f"---START Append and Spatial ID - COUNT={folder_list_length}")
         for folder in folder_list:
             folder_path = os.path.join(shape_folder, folder)
             for file in os.listdir(folder_path):
@@ -89,12 +90,17 @@ def gps_attribution():
                                             fr'COMMENTS "Additional Info" true true false 100 Text 0 0,First,#,{file_path},COMMENTS,0,18;'
                                             fr'GEOID "GEOID" true true false 20 Text 0 0,First,#', '', '')
         arcpy.CalculateField_management(gps_points, "SPATIALID", spatial_id_point, "PYTHON3")
+        Logging.logger.info(f"---FINISH Append and Spatial ID - COUNT={folder_list_length}")
 
+        Logging.logger.info(f"---START Update Last_Updated")
         # Update last_update.txt
         new_date = datetime.datetime.now().strftime(datetime_format)
         last_updated_file = open("last_updated.txt", "w")
         last_updated_file.write(f"{new_date}")
         last_updated_file.close()
+        Logging.logger.info(f"---FINISH Update Last_Updated - DATE={new_date}")
+    else:
+        Logging.logger.info(f"---PASS Append and Update - COUNT={folder_list_length}")
 
 
 if __name__ == "__main__":
