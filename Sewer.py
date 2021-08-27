@@ -75,15 +75,20 @@ def template_geometry_calculator(input_feature, layer_name, field_name, geometry
     selected_nulls_count = arcpy.GetCount_management(layer_name).getOutput(0)
     if int(selected_nulls_count) > 0:
         Logging.logger.info(f"---------START {field_name} - COUNT={selected_nulls_count}")
-        geometry_string = [[field_name, geometry_name]]
-        arcpy.CalculateGeometryAttributes_management(layer_name, geometry_string)
+        geometry_list = [[field_name, geometry_name]]
+        arcpy.CalculateGeometryAttributes_management(layer_name, geometry_list)
         Logging.logger.info(f"---------FINISH {field_name} - COUNT={selected_nulls_count}")
     else:
         Logging.logger.info(f"---------PASS {field_name} - COUNT={selected_nulls_count}")
 
 
 def template_spatial_calculator(input_feature, layer_name, field_name, expression):
-    arcpy.MakeFeatureLayer_management(input_feature, layer_name, f"{field_name} IS NULL")
+    # Check if a special selection is given
+    if input_feature == sewer_cleanouts and field_name == "FACILITYID":
+        selection = "FACILITYID IS NULL AND OWNEDBY = -2"
+    else:
+        selection = "FACILITYID IS NULL"
+    arcpy.MakeFeatureLayer_management(input_feature, layer_name, selection)
     selected_nulls_count = arcpy.GetCount_management(layer_name).getOutput(0)
     if int(selected_nulls_count) > 0:
         Logging.logger.info(f"---------START {field_name} - COUNT={selected_nulls_count}")
@@ -212,12 +217,64 @@ def cleanouts():
 
     # Spatial fields
     spatial_fields_to_calculate = [
-        ["cleanouts_spatial_id", "SPATIALID", spatial_id_point]
+        ["cleanouts_spatial_id", "SPATIALID", spatial_id_point],
+        ["cleanouts_facility_id", "FACILITYID", spatial_id_point]
     ]
 
     Logging.logger.info("------START Spatial Calculation")
     for field in spatial_fields_to_calculate:
         template_spatial_calculator(sewer_cleanouts, field[0], field[1], field[2])
+
+    selected_cleanouts = arcpy.SelectLayerByAttribute_management(sewer_cleanouts, "NEW_SELECTION", "FACILITYID IS NULL AND OWNEDBY = 1")
+    selected_quarter_sections = arcpy.SelectLayerByLocation_management(quarter_sections, "COMPLETELY_CONTAINS", selected_cleanouts)
+    selected_cleanouts_count = arcpy.GetCount_management(selected_cleanouts).getOutput(0)
+    if int(selected_cleanouts_count) > 0:
+        Logging.logger.info(f"---------START FACILITYID (City) - COUNT={selected_cleanouts_count}")
+
+        # Create a list of quarter sections then sanitize it
+        quarter_section_list = []
+        with arcpy.da.SearchCursor(selected_quarter_sections, "SEWMAP") as cursor:
+            for row in cursor:
+                quarter_section_list.append(row[0])
+        sanitized_quarter_section_list = [(section, section.replace("-", "")) for section in quarter_section_list]
+
+        # Select all relevant manholes in the current quarter section
+        global section
+        for section in sanitized_quarter_section_list:
+            selected_manholes_in_section = arcpy.SelectLayerByAttribute_management(sewer_manholes, "NEW_SELECTION", f"FACILITYID LIKE '%{section[1]}%' AND STAGE = 0")
+
+            # For the current quarter section, find the highest last three digits of selected cleanouts
+            with arcpy.da.SearchCursor(selected_manholes_in_section, "FACILITYID") as maximum_cursor:
+                global current_maximum_number
+                current_maximum = max(maximum_cursor)
+                current_maximum_number = int(current_maximum[0].replace("SD", "")[-3:])
+
+            # Select the null cleanouts inside the current quarter section
+            selected_quarter_sections = arcpy.SelectLayerByAttribute_management(quarter_sections, "NEW_SELECTION", f"SEWMAP LIKE '%{section[0]}%'")
+            selected_within_cleanouts = arcpy.SelectLayerByLocation_management(sewer_cleanouts, "COMPLETELY_WITHIN", selected_quarter_sections)
+            selected_null_cleanouts = arcpy.SelectLayerByAttribute_management(selected_within_cleanouts, "SUBSET_SELECTION", "FACILITYID IS NULL AND OWNEDBY = 1")
+
+            # Calculate the Facility IDs of each null cleanouts selected in the current quarter section, incrementing the last three digits per feature using the function below (indentation is correct)
+            increment_function = """index = 0
+def increment():
+    global index
+    global current_maximum_number
+    start = 1
+
+    if index == 0:
+        index = start
+    else:
+        index += 1
+
+    new_maximum_number = current_maximum_number + index
+    new_name = f"{section[1]}{new_maximum_number:03}C"
+    print(f"{index} + {current_maximum_number} = {new_name}")
+    return new_name"""
+            arcpy.CalculateField_management(selected_null_cleanouts, "FACILITYID", f"increment()", "PYTHON3", increment_function)
+            arcpy.Delete_management("SewerCleanouts")
+        Logging.logger.info(f"---------FINISH FACILITYID (City) - COUNT={selected_cleanouts_count}")
+    else:
+        Logging.logger.info(f"---------PASS FACILITYID (City) - COUNT={selected_cleanouts_count}")
     Logging.logger.info("------FINISH Spatial Calculation")
 
 
