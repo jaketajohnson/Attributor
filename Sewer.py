@@ -312,7 +312,7 @@ def gravity_mains():
     end_join = os.path.join(attributor, "SewerEndJoin")
 
     # Delete existing temp feature classes
-    Logging.logger.info("---------START DELETE")
+    Logging.logger.info("---------START DELETE Temp")
     if arcpy.Exists(start_vertices):
         arcpy.Delete_management(start_vertices)
     if arcpy.Exists(end_vertices):
@@ -321,9 +321,9 @@ def gravity_mains():
         arcpy.Delete_management(start_join)
     if arcpy.Exists(end_join):
         arcpy.Delete_management(end_join)
-    Logging.logger.info("---------FINISH DELETE")
+    Logging.logger.info("---------FINISH DELETE Temp")
 
-    # FROMMH
+    # FROMMH (map page)
     arcpy.MakeFeatureLayer_management(sewer_mains, "sewer_mains_null_frommh", "FROMMH IS NULL AND STAGE = 0 AND OWNEDBY = 1 AND (WATERTYPE = 'SS' OR WATERTYPE ='CB')")
     selected_null_frommh_count = arcpy.GetCount_management("sewer_mains_null_frommh").getOutput(0)
     if int(selected_null_frommh_count) > 0:
@@ -344,7 +344,7 @@ def gravity_mains():
     else:
         Logging.logger.info(f"---------PASS FROMMH - COUNT={selected_null_frommh_count}")
 
-    # TOMH
+    # TOMH (map page)
     arcpy.MakeFeatureLayer_management(sewer_mains, "sewer_mains_null_tomh", "TOMH IS NULL AND STAGE = 0 AND OWNEDBY = 1 AND (WATERTYPE = 'SS' OR WATERTYPE ='CB')")
     selected_null_tomh_count = arcpy.GetCount_management("sewer_mains_null_tomh").getOutput(0)
     if int(selected_null_tomh_count) > 0:
@@ -369,11 +369,21 @@ def gravity_mains():
     selected_null_facilityid = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "FACILITYID IS NULL AND STAGE = 0 AND (WATERTYPE = 'SS' OR WATERTYPE = 'CB')")
     selected_null_facilityid_count = arcpy.GetCount_management(selected_null_facilityid).getOutput(0)
     if int(selected_null_facilityid_count) > 0:
-        Logging.logger.info(f"---------START FACILITYID - COUNT={selected_null_facilityid_count}")
+        Logging.logger.info(f"---------START FACILITYID (Map Page) - COUNT={selected_null_facilityid_count}")
         arcpy.CalculateField_management(selected_null_facilityid, "FACILITYID", "!FROMMH! + '-' + !TOMH!", "PYTHON3")
-        Logging.logger.info(f"---------END FACILITYID - COUNT={selected_null_facilityid_count}")
+        Logging.logger.info(f"---------FINISH FACILITYID (Map Page) - COUNT={selected_null_facilityid_count}")
     else:
-        Logging.logger.info(f"---------PASS FACILITYID - COUNT={selected_null_facilityid_count}")
+        Logging.logger.info(f"---------PASS FACILITYID (Map Page) - COUNT={selected_null_facilityid_count}")
+
+    # Facility ID (stormwater)
+    selected_null_facilityid_storm = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "FACILITYID IS NULL AND STAGE = 0 AND WATERTYPE = 'SW'")
+    selected_null_facilityid_storm_count = arcpy.GetCount_management(selected_null_facilityid_storm).getOutput(0)
+    if int(selected_null_facilityid_storm_count) > 0:
+        Logging.logger.info(f"---------START FACILITYID (Spatial) - COUNT={selected_null_facilityid_storm_count}")
+        arcpy.CalculateField_management(selected_null_facilityid_storm, "FACILITYID", "!SPATIALID!", "PYTHON3")
+        Logging.logger.info(f"---------FINISH FACILITYID (Spatial) - COUNT={selected_null_facilityid_storm_count}")
+    else:
+        Logging.logger.info(f"---------PASS FACILITYID (Spatial) - COUNT={selected_null_facilityid_storm_count}")
     Logging.logger.info("------FINISH Spatial Calculation")
 
 

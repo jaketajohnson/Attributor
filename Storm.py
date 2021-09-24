@@ -290,10 +290,6 @@ def gravity_mains():
     else:
         Logging.logger.info(f"---------PASS TOMH - COUNT={selected_null_tomh_count}")"""
 
-    # Facility ID
-    facility_id_to_calculate = ["mains_null_facilityid", "FACILITYID", "!SPATIALID!"]
-    template_spatial_calculator(storm_mains, facility_id_to_calculate[0], facility_id_to_calculate[1], facility_id_to_calculate[2])
-
 
 if __name__ == "__main__":
     traceback_info = traceback.format_exc()
