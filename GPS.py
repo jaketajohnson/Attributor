@@ -16,11 +16,13 @@
  """
 
 import arcpy
-import Logging
 import os
 import datetime
 import traceback
 import re
+import sys
+sys.path.insert(0, "Y:/Scripts")
+import Logging
 
 # Paths - Geodatabase
 geodatabase_services_folder = "Z:\\"

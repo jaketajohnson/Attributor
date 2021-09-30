@@ -30,9 +30,11 @@
  """
 
 import arcpy
-import Logging
 import os
 import traceback
+import sys
+sys.path.insert(0, "Y:/Scripts")
+import Logging
 
 # Global variables for manhole naming
 current_maximum_number = 0
@@ -281,6 +283,7 @@ def increment():
 @Logging.insert("Gravity Mains", 1)
 def gravity_mains():
     """Calculate fields for sewer gravity mains"""
+
     # Geometry fields
     geometry_fields_to_calculate = [
         ["mains_null_x_start", "NAD83XSTART", "LINE_START_X"],

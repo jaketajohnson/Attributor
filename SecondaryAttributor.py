@@ -15,10 +15,12 @@
  """
 
 import arcpy
-import Logging
 import traceback
 import os
 import re
+import sys
+sys.path.insert(0, "Y:/Scripts")
+import Logging
 
 # Paths - Geodatabase
 geodatabase_services_folder = "Z:\\"
@@ -105,7 +107,7 @@ def detention_ponds():
     arcpy.CalculateField_management(detention_areas, "FACILITYID", facility_id, "PYTHON3")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     traceback_info = traceback.format_exc()
     try:
         Logging.logger.info("Script Execution Started")

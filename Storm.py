@@ -29,9 +29,11 @@
  """
 
 import arcpy
-import Logging
 import os
 import traceback
+import sys
+sys.path.insert(0, "Y:/Scripts")
+import Logging
 
 # Paths - Geodatabase
 geodatabase_services_folder = "Z:\\"

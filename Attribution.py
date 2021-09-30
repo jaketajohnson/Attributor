@@ -13,10 +13,12 @@
      arcpy
  """
 
-import Logging
 import GPS
 import Sewer
 import Storm
+import sys
+sys.path.insert(0, "Y:/Scripts")
+import Logging
 
 
 if __name__ == "__main__":
