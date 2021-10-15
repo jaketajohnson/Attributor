@@ -19,7 +19,6 @@
         * Calculates a Spatial ID and Facility ID using geometry fields
     2. For line assets:
         * Calculates NAD83XSTART, NAD83YSTART, NAD83XEND, NAD83YEND geometry fields
-        * Todo: Calculates FROMMH and TOMH where applicable
         * Calculates Spatial Start, Spatial End, Spatial ID, and Facility ID fields using geometry fields
 
  REQUIREMENTS

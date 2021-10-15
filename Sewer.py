@@ -36,9 +36,26 @@ import sys
 sys.path.insert(0, "Y:/Scripts")
 import Logging
 
-# Global variables for manhole naming
-current_maximum_number = 0
-section = "0000AA000"
+# Global variables for manhole naming: increment function for field calculation and a dummy global maximum number
+increment_function = """index = 0
+def increment(map_section, maximum, cleanout=False):
+    global index
+    global current_maximum_number
+    start = 1
+
+    if index == 0:
+        index = start
+    else:
+        index += 1
+
+    new_maximum_number = maximum + index
+    if cleanout:
+        new_name = f"{map_section}{new_maximum_number:03}C"
+    else:
+        new_name = f"{map_section}{new_maximum_number:03}"
+    print(f"{index} + {maximum} = {new_name}")
+    return new_name"""
+current_maximum_number_cleanouts = 0
 
 # Paths - Geodatabase
 geodatabase_services_folder = "Z:\\"
@@ -138,15 +155,13 @@ def manholes():
         sanitized_quarter_section_list = [(section, section.replace("-", "")) for section in quarter_section_list]
 
         # Select all relevant manholes in the current quarter section
-        global section
         for section in sanitized_quarter_section_list:
             selected_manholes_in_section = arcpy.SelectLayerByAttribute_management(sewer_manholes, "NEW_SELECTION", f"FACILITYID LIKE '%{section[1]}%' AND STAGE = 0")
 
             # For the current quarter section, find the highest last three digits of selected manholes
             with arcpy.da.SearchCursor(selected_manholes_in_section, "FACILITYID") as maximum_cursor:
-                global current_maximum_number
                 current_maximum = max(maximum_cursor)
-                current_maximum_number = int(current_maximum[0].replace("SD", "")[-3:])
+                current_maximum_number_manholes = int(current_maximum[0].replace("SD", "")[-3:])
 
             # Select the null manholes inside the current quarter section
             selected_quarter_sections = arcpy.SelectLayerByAttribute_management(quarter_sections, "NEW_SELECTION", f"SEWMAP LIKE '%{section[0]}%'")
@@ -154,22 +169,7 @@ def manholes():
             selected_null_manholes = arcpy.SelectLayerByAttribute_management(selected_within_manholes, "SUBSET_SELECTION", "FACILITYID IS NULL AND STAGE = 0")
 
             # Calculate the Facility IDs of each null manhole selected in the current quarter section, incrementing the last three digits per feature using the function below (indentation is correct)
-            increment_function = """index = 0
-def increment():
-    global index
-    global current_maximum_number
-    start = 1
-
-    if index == 0:
-        index = start
-    else:
-        index += 1
-
-    new_maximum_number = current_maximum_number + index
-    new_name = f"{section[1]}{new_maximum_number:03}"
-    print(f"{index} + {current_maximum_number} = {new_name}")
-    return new_name"""
-            arcpy.CalculateField_management(selected_null_manholes, "FACILITYID", f"increment()", "PYTHON3", increment_function)
+            arcpy.CalculateField_management(selected_null_manholes, "FACILITYID", f"increment('{section[1]}', {current_maximum_number_manholes})", "PYTHON3", increment_function)
             arcpy.Delete_management("SewerManholes")
         Logging.logger.info(f"---------FINISH FACILITYID - COUNT={selected_manholes_count}")
     else:
@@ -241,15 +241,14 @@ def cleanouts():
         sanitized_quarter_section_list = [(section, section.replace("-", "")) for section in quarter_section_list]
 
         # Select all relevant manholes in the current quarter section
-        global section
         for section in sanitized_quarter_section_list:
             selected_manholes_in_section = arcpy.SelectLayerByAttribute_management(sewer_manholes, "NEW_SELECTION", f"FACILITYID LIKE '%{section[1]}%' AND STAGE = 0")
 
             # For the current quarter section, find the highest last three digits of selected cleanouts
             with arcpy.da.SearchCursor(selected_manholes_in_section, "FACILITYID") as maximum_cursor:
-                global current_maximum_number
+                global current_maximum_number_cleanouts
                 current_maximum = max(maximum_cursor)
-                current_maximum_number = int(current_maximum[0].replace("SD", "")[-3:])
+                current_maximum_number_cleanouts = int(current_maximum[0].replace("SD", "")[-3:])
 
             # Select the null cleanouts inside the current quarter section
             selected_quarter_sections = arcpy.SelectLayerByAttribute_management(quarter_sections, "NEW_SELECTION", f"SEWMAP LIKE '%{section[0]}%'")
@@ -257,22 +256,7 @@ def cleanouts():
             selected_null_cleanouts = arcpy.SelectLayerByAttribute_management(selected_within_cleanouts, "SUBSET_SELECTION", "FACILITYID IS NULL AND OWNEDBY = 1")
 
             # Calculate the Facility IDs of each null cleanouts selected in the current quarter section, incrementing the last three digits per feature using the function below (indentation is correct)
-            increment_function = """index = 0
-def increment():
-    global index
-    global current_maximum_number
-    start = 1
-
-    if index == 0:
-        index = start
-    else:
-        index += 1
-
-    new_maximum_number = current_maximum_number + index
-    new_name = f"{section[1]}{new_maximum_number:03}C"
-    print(f"{index} + {current_maximum_number} = {new_name}")
-    return new_name"""
-            arcpy.CalculateField_management(selected_null_cleanouts, "FACILITYID", f"increment()", "PYTHON3", increment_function)
+            arcpy.CalculateField_management(selected_null_cleanouts, "FACILITYID", f"increment('{section[1]}', {current_maximum_number_cleanouts}, True)", "PYTHON3", increment_function)
             arcpy.Delete_management("SewerCleanouts")
         Logging.logger.info(f"---------FINISH FACILITYID (City) - COUNT={selected_cleanouts_count}")
     else:
