@@ -79,11 +79,6 @@ spatial_id_line_sewer = "!SPATAILSTART! + '_' + !SPATAILEND!"  # Yes it's seriou
 spatial_id_line_storm = "!SPATIALSTART! + '_' + !SPATIALEND!"
 spatial_id_point = "str(int(!NAD83X!))[2:4] + str(int(!NAD83Y!))[2:4] + '-' + str(int(!NAD83X!))[4] + str(int(!NAD83Y!))[4] + '-' + str(int(!NAD83X!))[-2:] + str(int(!NAD83Y!))[-2:]"
 
-# Selection expressions
-manhole_main_exception = "FACILITYID IS NULL AND (WATERTYPE = 'SW' OR OWNEDBY = -2)"
-cleanout_exception = "FACILITYID IS NULL"
-inlet_exception = "FACILITYID IS NULL"
-
 # Environments
 arcpy.env.overwriteOutput = True
 
@@ -105,6 +100,12 @@ def template_spatial_calculator(input_feature, layer_name, field_name, expressio
     # Check if a special selection is given
     if input_feature == sewer_cleanouts and field_name == "FACILITYID":
         selection = "FACILITYID IS NULL AND OWNEDBY = -2"
+    elif input_feature == sewer_manholes and field_name == "FACILITYID":
+        selection = "FACILITYID IS NULL AND OWNEDBY = -2"
+    elif input_feature == sewer_mains and field_name == "FROMMH":
+        selection = "FROMMH IS NULL AND OWNEDBY = -2"
+    elif input_feature == sewer_mains and field_name == "TOMH":
+        selection = "TOMH IS NULL AND OWNEDBY = -2"
     else:
         selection = "FACILITYID IS NULL"
     arcpy.MakeFeatureLayer_management(input_feature, layer_name, selection)
@@ -133,7 +134,8 @@ def manholes():
 
     # Spatial fields
     spatial_fields_to_calculate = [
-        ["manholes_spatial_id", "SPATIALID", spatial_id_point]
+        ["manholes_spatial_id", "SPATIALID", spatial_id_point],
+        ["manholes_facility_id", "FACILITYID", spatial_id_point],
     ]
 
     Logging.logger.info("------START Spatial Calculation")
@@ -145,7 +147,7 @@ def manholes():
     selected_quarter_sections = arcpy.SelectLayerByLocation_management(quarter_sections, "COMPLETELY_CONTAINS", selected_manholes)
     selected_manholes_count = arcpy.GetCount_management(selected_manholes).getOutput(0)
     if int(selected_manholes_count) > 0:
-        Logging.logger.info(f"---------START FACILITYID - COUNT={selected_manholes_count}")
+        Logging.logger.info(f"---------START FACILITYID (Map Page) - COUNT={selected_manholes_count}")
 
         # Create a list of quarter sections then sanitize it
         quarter_section_list = []
@@ -166,14 +168,14 @@ def manholes():
             # Select the null manholes inside the current quarter section
             selected_quarter_sections = arcpy.SelectLayerByAttribute_management(quarter_sections, "NEW_SELECTION", f"SEWMAP LIKE '%{section[0]}%'")
             selected_within_manholes = arcpy.SelectLayerByLocation_management(sewer_manholes, "COMPLETELY_WITHIN", selected_quarter_sections)
-            selected_null_manholes = arcpy.SelectLayerByAttribute_management(selected_within_manholes, "SUBSET_SELECTION", "FACILITYID IS NULL AND STAGE = 0")
+            selected_null_manholes = arcpy.SelectLayerByAttribute_management(selected_within_manholes, "SUBSET_SELECTION", "FACILITYID IS NULL AND STAGE = 0 AND OWNEDBY = 1")
 
-            # Calculate the Facility IDs of each null manhole selected in the current quarter section, incrementing the last three digits per feature using the function below (indentation is correct)
+            # Calculate the Facility IDs of each null manhole selected in the current quarter section, incrementing the last three digits per feature
             arcpy.CalculateField_management(selected_null_manholes, "FACILITYID", f"increment('{section[1]}', {current_maximum_number_manholes})", "PYTHON3", increment_function)
             arcpy.Delete_management("SewerManholes")
-        Logging.logger.info(f"---------FINISH FACILITYID - COUNT={selected_manholes_count}")
+        Logging.logger.info(f"---------FINISH FACILITYID (Map Page) - COUNT={selected_manholes_count}")
     else:
-        Logging.logger.info(f"---------PASS FACILITYID - COUNT={selected_manholes_count}")
+        Logging.logger.info(f"---------PASS FACILITYID (Map Page) - COUNT={selected_manholes_count}")
     Logging.logger.info("------FINISH Spatial Calculation")
 
 
@@ -242,10 +244,10 @@ def cleanouts():
 
         # Select all relevant manholes in the current quarter section
         for section in sanitized_quarter_section_list:
-            selected_manholes_in_section = arcpy.SelectLayerByAttribute_management(sewer_manholes, "NEW_SELECTION", f"FACILITYID LIKE '%{section[1]}%' AND STAGE = 0")
+            selected_cleanouts_in_section = arcpy.SelectLayerByAttribute_management(sewer_cleanouts, "NEW_SELECTION", f"FACILITYID LIKE '%{section[1]}%' AND STAGE = 0")
 
             # For the current quarter section, find the highest last three digits of selected cleanouts
-            with arcpy.da.SearchCursor(selected_manholes_in_section, "FACILITYID") as maximum_cursor:
+            with arcpy.da.SearchCursor(selected_cleanouts_in_section, "FACILITYID") as maximum_cursor:
                 global current_maximum_number_cleanouts
                 current_maximum = max(maximum_cursor)
                 current_maximum_number_cleanouts = int(current_maximum[0].replace("SD", "")[-3:])
@@ -282,6 +284,8 @@ def gravity_mains():
 
     # Spatial fields
     spatial_fields_to_calculate = [
+        ["null_frommh", "FROMMH", spatial_start],
+        ["null_tomh", "TOMH", spatial_end],
         ["null_spatial_start", "SPATAILSTART", spatial_start],
         ["null_spatial_end", "SPATAILEND", spatial_end],
         ["null_spatial_id", "SPATIALID", spatial_id_line_sewer]
