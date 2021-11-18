@@ -76,6 +76,7 @@ spatial_start = "str(int(!NAD83XSTART!))[2:4] + str(int(!NAD83YSTART!))[2:4] + '
                 "str(int(!NAD83YSTART!))[4] + '-' + str(int(!NAD83XSTART!))[-2:] + str(int(!NAD83YSTART!))[-2:]"
 spatial_end = "str(int(!NAD83XEND!))[2:4] + str(int(!NAD83YEND!))[2:4] + '-' + str(int(!NAD83XEND!))[4] + str(int(!NAD83YEND!))[4] + '-' + str(int(!NAD83XEND!))[-2:] + str(int(!NAD83YEND!))[-2:]"
 spatial_id_line_sewer = "!SPATAILSTART! + '_' + !SPATAILEND!"  # Yes it's seriously misspelled
+spatial_id_line_sewer_storm = "!SPATAILSTART! + '_' + !SPATAILEND!"
 spatial_id_line_storm = "!SPATIALSTART! + '_' + !SPATIALEND!"
 spatial_id_point = "str(int(!NAD83X!))[2:4] + str(int(!NAD83Y!))[2:4] + '-' + str(int(!NAD83X!))[4] + str(int(!NAD83Y!))[4] + '-' + str(int(!NAD83X!))[-2:] + str(int(!NAD83Y!))[-2:]"
 
@@ -161,9 +162,12 @@ def manholes():
             selected_manholes_in_section = arcpy.SelectLayerByAttribute_management(sewer_manholes, "NEW_SELECTION", f"FACILITYID LIKE '%{section[1]}%' AND STAGE = 0")
 
             # For the current quarter section, find the highest last three digits of selected manholes
-            with arcpy.da.SearchCursor(selected_manholes_in_section, "FACILITYID") as maximum_cursor:
-                current_maximum = max(maximum_cursor)
-                current_maximum_number_manholes = int(current_maximum[0].replace("SD", "")[-3:])
+            if int(arcpy.GetCount_management(selected_manholes_in_section).getOutput(0)) > 0:
+                with arcpy.da.SearchCursor(selected_manholes_in_section, "FACILITYID") as maximum_cursor:
+                    current_maximum = max(maximum_cursor)
+                    current_maximum_number_manholes = int(current_maximum[0].replace("SD", "")[-3:])
+            else:
+                current_maximum_number_manholes = 0
 
             # Select the null manholes inside the current quarter section
             selected_quarter_sections = arcpy.SelectLayerByAttribute_management(quarter_sections, "NEW_SELECTION", f"SEWMAP LIKE '%{section[0]}%'")
@@ -196,12 +200,12 @@ def inlets():
     # Spatial fields
     spatial_fields_to_calculate = [
         ["inlets_null_spatial_id", "SPATIALID", spatial_id_point],
-        ["inlets_null_facility_id", "FACILITYID", "!SPATIALID!"]
+        ["inlets_null_facility_id", "FACILITYID", spatial_id_point]
     ]
 
     Logging.logger.info("------START Spatial Calculation")
     for field in spatial_fields_to_calculate:
-        template_spatial_calculator(sewer_manholes, field[0], field[1], field[2])
+        template_spatial_calculator(sewer_inlets, field[0], field[1], field[2])
     Logging.logger.info("------FINISH Spatial Calculation")
 
 
