@@ -29,6 +29,7 @@ if __name__ == "__main__":
     Sewer.manholes()
     Sewer.inlets()
     Sewer.cleanouts()
+    Sewer.fittings()
     Sewer.gravity_mains()
     Logging.logger.info("Sewer Finish")
 

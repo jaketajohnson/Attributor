@@ -48,6 +48,10 @@ storm_inlets = os.path.join(storm_dataset, "swInlet")
 storm_discharges = os.path.join(storm_dataset, "swDischargePoint")
 storm_culverts = os.path.join(storm_dataset, "swCulvert")
 
+# Paths - Engineering
+sewer_engineering = os.path.join(sde, "SewerEngineering")
+gps_nodes = os.path.join(sewer_engineering, "gpsNode")
+
 # Field calculator expressions
 spatial_start = "str(int(!NAD83XSTART!))[2:4] + str(int(!NAD83YSTART!))[2:4] + '-' + str(int(!NAD83XSTART!))[4] + " \
                 "str(int(!NAD83YSTART!))[4] + '-' + str(int(!NAD83XSTART!))[-2:] + str(int(!NAD83YSTART!))[-2:]"
@@ -69,6 +73,23 @@ def template_geometry_calculator(input_feature, layer_name, field_name, geometry
         Logging.logger.info(f"---------PASS {field_name} - COUNT={selected_nulls_count}")
 
 
+def template_geometry_z_calculator(input_feature, layer_name, field_name):
+    arcpy.MakeFeatureLayer_management(input_feature, layer_name, f"{field_name} IS NULL AND STAGE = 0")
+    arcpy.MakeFeatureLayer_management(gps_nodes, "gps_nodes")
+    gps_identical = arcpy.SelectLayerByLocation_management("gps_nodes", "ARE_IDENTICAL_TO", layer_name)
+    selected_nulls_count = arcpy.GetCount_management(gps_identical).getOutput(0)
+    if int(selected_nulls_count) > 0:
+        Logging.logger.info(f"---------START {field_name} - COUNT={selected_nulls_count}")
+        with arcpy.da.SearchCursor(gps_identical, ["OBJECTID", "NAVD88Z"]) as cursor:
+            for row in cursor:
+                selected_node = arcpy.SelectLayerByAttribute_management(gps_identical, "NEW_SELECTION", f"OBJECTID = {row[0]}")
+                selected_manhole = arcpy.SelectLayerByLocation_management(layer_name, "ARE_IDENTICAL_TO", selected_node)
+                arcpy.CalculateField_management(selected_manhole, field_name, f"{row[1]}", "PYTHON3")
+        Logging.logger.info(f"---------FINISH {field_name} - COUNT={selected_nulls_count}")
+    else:
+        Logging.logger.info(f"---------PASS {field_name} - COUNT={selected_nulls_count}")
+
+
 def template_spatial_calculator(input_feature, layer_name, field_name, expression):
     arcpy.MakeFeatureLayer_management(input_feature, layer_name, f"{field_name} IS NULL")
     selected_nulls_count = arcpy.GetCount_management(layer_name).getOutput(0)
@@ -80,6 +101,7 @@ def template_spatial_calculator(input_feature, layer_name, field_name, expressio
         Logging.logger.info(f"---------PASS {field_name} - COUNT={selected_nulls_count}")
 
 
+# Main functions
 @Logging.insert("Manholes", 1)
 def manholes():
     """Calculate fields for sewer manholes"""
@@ -93,6 +115,10 @@ def manholes():
     for field in geometry_fields_to_calculate:
         template_geometry_calculator(storm_manholes, field[0], field[1], field[2])
     Logging.logger.info("------FINISH Geometry Calculation")
+
+    Logging.logger.info("------START Geometry (Z) Calculation")
+    template_geometry_z_calculator(storm_manholes, "manholes_null_z", "NAVD88INLET")
+    Logging.logger.info("------FINISH Geometry (Z) Calculation")
 
     # Spatial fields
     spatial_fields_to_calculate = [
@@ -120,6 +146,10 @@ def inlets():
         template_geometry_calculator(storm_inlets, field[0], field[1], field[2])
     Logging.logger.info("------FINISH Geometry Calculation")
 
+    Logging.logger.info("------START Geometry (Z) Calculation")
+    template_geometry_z_calculator(storm_inlets, "inlets_null_z", "NAVD88RIM")
+    Logging.logger.info("------FINISH Geometry (Z) Calculation")
+
     # Spatial fields
     spatial_fields_to_calculate = [
         ["inlets_spatial_id", "SPATIALID", spatial_id_point],
@@ -145,6 +175,10 @@ def cleanouts():
     for field in geometry_fields_to_calculate:
         template_geometry_calculator(storm_inlets, field[0], field[1], field[2])
     Logging.logger.info("------FINISH Geometry Calculation")
+
+    Logging.logger.info("------START Geometry (Z) Calculation")
+    template_geometry_z_calculator(storm_cleanouts, "cleanouts_null_z", "NAVD88LID")
+    Logging.logger.info("------FINISH Geometry (Z) Calculation")
 
     # Spatial fields
     spatial_fields_to_calculate = [
