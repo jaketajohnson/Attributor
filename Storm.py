@@ -16,6 +16,7 @@
 
     1. For point assets:
         * Calculates NAD83X and NAD83Y geometry fields
+        * Calculates NAD83Z. This is not a geometry field. It's filled out using the elevation data from an overlapping GPS point
         * Calculates a Spatial ID and Facility ID using geometry fields
     2. For line assets:
         * Calculates NAD83XSTART, NAD83YSTART, NAD83XEND, NAD83YEND geometry fields
@@ -47,6 +48,7 @@ storm_cleanouts = os.path.join(storm_dataset, "swCleanout")
 storm_inlets = os.path.join(storm_dataset, "swInlet")
 storm_discharges = os.path.join(storm_dataset, "swDischargePoint")
 storm_culverts = os.path.join(storm_dataset, "swCulvert")
+storm_fittings = os.path.join(storm_dataset, "swFitting")
 
 # Paths - Engineering
 sewer_engineering = os.path.join(sde, "SewerEngineering")
@@ -74,7 +76,7 @@ def template_geometry_calculator(input_feature, layer_name, field_name, geometry
 
 
 def template_geometry_z_calculator(input_feature, layer_name, field_name):
-    arcpy.MakeFeatureLayer_management(input_feature, layer_name, f"{field_name} IS NULL AND STAGE = 0")
+    arcpy.MakeFeatureLayer_management(input_feature, layer_name, f"{field_name} IS NULL")
     arcpy.MakeFeatureLayer_management(gps_nodes, "gps_nodes")
     gps_identical = arcpy.SelectLayerByLocation_management("gps_nodes", "ARE_IDENTICAL_TO", layer_name)
     selected_nulls_count = arcpy.GetCount_management(gps_identical).getOutput(0)
@@ -117,7 +119,7 @@ def manholes():
     Logging.logger.info("------FINISH Geometry Calculation")
 
     Logging.logger.info("------START Geometry (Z) Calculation")
-    template_geometry_z_calculator(storm_manholes, "manholes_null_z", "NAVD88INLET")
+    template_geometry_z_calculator(storm_manholes, "manholes_null_z", "NAVD88RIM")
     Logging.logger.info("------FINISH Geometry (Z) Calculation")
 
     # Spatial fields
@@ -147,7 +149,7 @@ def inlets():
     Logging.logger.info("------FINISH Geometry Calculation")
 
     Logging.logger.info("------START Geometry (Z) Calculation")
-    template_geometry_z_calculator(storm_inlets, "inlets_null_z", "NAVD88RIM")
+    template_geometry_z_calculator(storm_inlets, "inlets_null_z", "NAVD88INLET")
     Logging.logger.info("------FINISH Geometry (Z) Calculation")
 
     # Spatial fields
@@ -206,6 +208,10 @@ def discharges():
         template_geometry_calculator(storm_discharges, field[0], field[1], field[2])
     Logging.logger.info("------FINISH Geometry Calculation")
 
+    Logging.logger.info("------START Geometry (Z) Calculation")
+    template_geometry_z_calculator(storm_discharges, "discharge_null_z", "NAVD88FL")
+    Logging.logger.info("------FINISH Geometry (Z) Calculation")
+
     # Spatial fields
     spatial_fields_to_calculate = [
         ["discharge_spatial_id", "SPATIALID", spatial_id_point],
@@ -245,6 +251,24 @@ def culverts():
     for field in spatial_fields_to_calculate:
         template_spatial_calculator(storm_mains, field[0], field[1], field[2])
     Logging.logger.info("------FINISH Spatial Calculation")
+
+
+@Logging.insert("Fittings", 1)
+def fittings():
+    arcpy.MakeFeatureLayer_management(storm_fittings, "fittings_null_facility_id", "FACILITYID IS NULL")
+    selected_nulls_count = arcpy.GetCount_management("fittings_null_facility_id").getOutput(0)
+    if int(selected_nulls_count) > 0:
+        Logging.logger.info(f"------START FACILITYID - COUNT={selected_nulls_count}")
+        with arcpy.da.SearchCursor("fittings_null_facility_id", ["OBJECTID", "FACILITYID", "SHAPE@X", "SHAPE@Y"]) as cursor:
+            for row in cursor:
+                x_coordinate = row[2]
+                y_coordinate = row[3]
+                facility_id = str(int(x_coordinate))[2:4] + str(int(y_coordinate))[2:4] + '-' + str(int(x_coordinate))[4] + str(int(y_coordinate))[4] + '-' + str(int(x_coordinate))[-2:] + str(int(y_coordinate))[-2:]
+                selected_fittings = arcpy.SelectLayerByAttribute_management("fittings_null_facility_id", "NEW_SELECTION", f"OBJECTID = {row[0]}")
+                arcpy.CalculateField_management(selected_fittings, f"FACILITYID", f"'{facility_id}'", "PYTHON3")
+        Logging.logger.info(f"------FINISH FACILITYID - COUNT={selected_nulls_count}")
+    else:
+        Logging.logger.info(f"------PASS FACILITYID - COUNT={selected_nulls_count}")
 
 
 @Logging.insert("Gravity Mains", 1)
@@ -335,6 +359,7 @@ if __name__ == "__main__":
         cleanouts()
         discharges()
         culverts()
+        fittings()
         gravity_mains()
         Logging.logger.info("Script Execution Finished")
     except (IOError, NameError, KeyError, IndexError, TypeError, UnboundLocalError, ValueError):

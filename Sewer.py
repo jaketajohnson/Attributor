@@ -12,16 +12,18 @@
     * Checks only null values and only performs an operation if more than 0 features need operated on
     * Comprehensive logging
     * Error logging
-
-    1. For point assets:
-        * Calculates NAD83X and NAD83Y geometry fields
-        * Calculates a Spatial ID using geometry fields
-        * Calculates a Facility ID using the current map page number and the highest existing 3-digit value plus one (ie if the existing high value is 1414GH065 the new features will start from ...066 onwards)
-    2. For line assets:
-        * Calculates NAD83XSTART, NAD83YSTART, NAD83XEND, NAD83YEND geometry fields
-        * Calculates Spatial Start, Spatial End, and Spatial ID fields using geometry fields
-        * Calculates FROMMH and TOMH fields using upstream/downstream vertices that intersect manholes
-        * Uses FROMM and TOMH to create a new Facility ID
+    * Fields to calculate (name may not reflect the actual field name):
+        1. For point assets:
+            * Calculates NAD83X and NAD83Y geometry fields
+            * Calculates NAD83Z. This is not a geometry field. It's filled out using the elevation data from an overlapping GPS point
+            * Calculates a Spatial ID using geometry fields
+            * For City-owned assets: Calculates a Facility ID using the current map page number and the highest existing 3-digit + 1 (ie if the highest value is 1414GH065 the new features will start from 066 onward)
+            * For other-owned assets: Calculates a Facility ID using Spatial information
+        2. For line assets:
+            * Calculates NAD83XSTART, NAD83YSTART, NAD83XEND, NAD83YEND geometry fields
+            * Calculates Spatial Start, Spatial End, and Spatial ID fields using geometry fields
+            * Calculates FROMMH and TOMH fields using upstream/downstream vertices that intersect manholes
+            * Uses FROMM and TOMH to create a new Facility ID
 
  REQUIREMENTS
 
@@ -103,7 +105,7 @@ def template_geometry_calculator(input_feature, layer_name, field_name, geometry
 
 
 def template_geometry_z_calculator(input_feature, layer_name, field_name):
-    arcpy.MakeFeatureLayer_management(input_feature, layer_name, f"{field_name} IS NULL AND STAGE = 0")
+    arcpy.MakeFeatureLayer_management(input_feature, layer_name, f"{field_name} IS NULL")
     arcpy.MakeFeatureLayer_management(gps_nodes, "gps_nodes")
     gps_identical = arcpy.SelectLayerByLocation_management("gps_nodes", "ARE_IDENTICAL_TO", layer_name)
     selected_nulls_count = arcpy.GetCount_management(gps_identical).getOutput(0)
@@ -225,7 +227,7 @@ def inlets():
     Logging.logger.info("------FINISH Geometry Calculation")
 
     Logging.logger.info("------START Geometry (Z) Calculation")
-    template_geometry_z_calculator(sewer_inlets, "inlets_null_z", "NAVD88RIM")
+    template_geometry_z_calculator(sewer_inlets, "inlets_null_z", "NAVD88INLET")
     Logging.logger.info("------FINISH Geometry (Z) Calculation")
 
     # Spatial fields
@@ -400,7 +402,7 @@ def gravity_mains():
     Logging.logger.info("---------FINISH DELETE Temp")
 
     # WIP for allowing endpoints to be more than just manholes
-    def endpoint_naming(input_feature, direction):
+    def endpoint_naming(input_feature, direction, logging_name):
 
         # Upstream or downstream variables
         if direction == "upstream":
@@ -409,21 +411,21 @@ def gravity_mains():
             join_string = "START"
             join_layer = "StartJoin"
             vertices_output = start_vertices
-            logging_string = "FROMMH"
+            field_to_calculate = "FROMMH"
         elif direction == "downstream":
             expression = "TOMH IS NULL AND STAGE = 0 AND OWNEDBY = 1 AND (WATERTYPE = 'SS' OR WATERTYPE ='CB')"
             join_output = end_join
             join_string = "END"
             join_layer = "EndJoin"
             vertices_output = end_vertices
-            logging_string = "TOMH"
+            field_to_calculate = "TOMH"
         else:
             raise ValueError("No direction")
 
         arcpy.MakeFeatureLayer_management(sewer_mains, "sewer_mains_null", f"{expression}")
         selected_null_count = arcpy.GetCount_management("sewer_mains_null").getOutput(0)
         if int(selected_null_count) > 0:
-            Logging.logger.info(f"---------START {logging_string} for {input_feature} - COUNT={selected_null_count}")
+            Logging.logger.info(f"---------START {field_to_calculate} for {logging_name} - COUNT={selected_null_count}")
             arcpy.FeatureVerticesToPoints_management("sewer_mains_null", vertices_output, join_string)
             selected_intersecting_features = arcpy.SelectLayerByLocation_management(input_feature, "INTERSECT", vertices_output)
             arcpy.SpatialJoin_analysis(selected_intersecting_features, vertices_output, join_output, "JOIN_ONE_TO_MANY", "KEEP_COMMON",
@@ -431,68 +433,27 @@ def gravity_mains():
                                        f"ORIG_FID 'ORIG_FID' true true false 4 Long 0 0,First,#,{vertices_output},ORIG_FID,-1,-1")
             arcpy.MakeFeatureLayer_management(join_output, join_layer)
 
-            with arcpy.da.SearchCursor("StartJoin", ["ORIG_FID", "FACILITYID"]) as cursor:
+            with arcpy.da.SearchCursor(join_layer, ["ORIG_FID", "FACILITYID"]) as cursor:
                 for feature in cursor:
                     print(f"------------MAIN - {feature[0]};{feature[1]}")
                     selected_target_feature = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", f"OBJECTID = {feature[0]}")
-                    arcpy.CalculateField_management(selected_target_feature, "FROMMH", f"'{feature[1]}'", "PYTHON3")
-            Logging.logger.info(f"---------FINISH {logging_string} - COUNT={selected_null_count}")
+                    arcpy.CalculateField_management(selected_target_feature, f"{field_to_calculate}", f"'{feature[1]}'", "PYTHON3")
+            Logging.logger.info(f"---------FINISH {field_to_calculate} - COUNT={selected_null_count}")
+        else:
+            Logging.logger.info(f"---------PASS {field_to_calculate} - COUNT={selected_null_count}")
 
     # Endpoint naming
     # Manholes
-    endpoint_naming(sewer_manholes, "upstream")
-    endpoint_naming(sewer_manholes, "downstream")
+    endpoint_naming(sewer_manholes, "upstream", "Manholes")
+    endpoint_naming(sewer_manholes, "downstream", "Manholes")
 
     # Cleanouts
-    endpoint_naming(sewer_cleanouts, "upstream")
-    endpoint_naming(sewer_cleanouts, "downstream")
+    endpoint_naming(sewer_cleanouts, "upstream", "Cleanouts")
+    endpoint_naming(sewer_cleanouts, "downstream", "Cleanouts")
 
     # Fittings
-    endpoint_naming(sewer_fittings, "upstream")
-    endpoint_naming(sewer_fittings, "downstream")
-
-    """# FROMMH (map page)
-    arcpy.MakeFeatureLayer_management(sewer_mains, "sewer_mains_null_frommh", "FROMMH IS NULL AND STAGE = 0 AND OWNEDBY = 1 AND (WATERTYPE = 'SS' OR WATERTYPE ='CB')")
-    selected_null_frommh_count = arcpy.GetCount_management("sewer_mains_null_frommh").getOutput(0)
-    if int(selected_null_frommh_count) > 0:
-        # Manholes
-        Logging.logger.info(f"---------START FROMMH (Manhole) - COUNT={selected_null_frommh_count}")
-        arcpy.FeatureVerticesToPoints_management("sewer_mains_null_frommh", start_vertices, "START")
-        upstream_features = arcpy.SelectLayerByLocation_management(sewer_manholes, "INTERSECT", start_vertices)
-        arcpy.SpatialJoin_analysis(upstream_features, start_vertices, start_join, "JOIN_ONE_TO_MANY", "KEEP_COMMON",
-                                   f"FACILITYID 'Facility ID' true true false 20 Text 0 0,First,#,{sewer_manholes},FACILITYID,0,20;"
-                                   f"ORIG_FID 'ORIG_FID' true true false 4 Long 0 0,First,#,{start_vertices},ORIG_FID,-1,-1")
-        arcpy.MakeFeatureLayer_management(start_join, "StartJoin")
-
-        with arcpy.da.SearchCursor("StartJoin", ["ORIG_FID", "FACILITYID"]) as cursor:
-            for feature in cursor:
-                print(f"------------MAIN - {feature[0]};{feature[1]}")
-                selected_target_feature = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", f"OBJECTID = {feature[0]}")
-                arcpy.CalculateField_management(selected_target_feature, "FROMMH", f"'{feature[1]}'", "PYTHON3")
-        Logging.logger.info(f"---------FINISH FROMMH - COUNT={selected_null_frommh_count}")
-    else:
-        Logging.logger.info(f"---------PASS FROMMH - COUNT={selected_null_frommh_count}")
-
-    # TOMH (map page)
-    arcpy.MakeFeatureLayer_management(sewer_mains, "sewer_mains_null_tomh", "TOMH IS NULL AND STAGE = 0 AND OWNEDBY = 1 AND (WATERTYPE = 'SS' OR WATERTYPE ='CB')")
-    selected_null_tomh_count = arcpy.GetCount_management("sewer_mains_null_tomh").getOutput(0)
-    if int(selected_null_tomh_count) > 0:
-        Logging.logger.info(f"---------START TOMH - COUNT={selected_null_tomh_count}")
-        arcpy.FeatureVerticesToPoints_management("sewer_mains_null_tomh", end_vertices, "END")
-        downstream_features = arcpy.SelectLayerByLocation_management(sewer_manholes, "INTERSECT", end_vertices)
-        arcpy.SpatialJoin_analysis(downstream_features, end_vertices, end_join, "JOIN_ONE_TO_MANY", "KEEP_COMMON",
-                                   f"FACILITYID 'Facility ID' true true false 20 Text 0 0,First,#,{sewer_manholes},FACILITYID,0,20;"
-                                   f"ORIG_FID 'ORIG_FID' true true false 4 Long 0 0,First,#,{end_vertices},ORIG_FID,-1,-1")
-        arcpy.MakeFeatureLayer_management(end_join, "EndJoin")
-
-        with arcpy.da.SearchCursor("EndJoin", ["ORIG_FID", "FACILITYID"]) as cursor:
-            for row in cursor:
-                print(f"------------MAIN - {row[0]};{row[1]}")
-                selected_target_main = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", f"OBJECTID = {row[0]}")
-                arcpy.CalculateField_management(selected_target_main, "TOMH", f"'{row[1]}'", "PYTHON3")
-        Logging.logger.info(f"---------FINISH TOMH - COUNT={selected_null_tomh_count}")
-    else:
-        Logging.logger.info(f"---------PASS TOMH - COUNT={selected_null_tomh_count}")"""
+    endpoint_naming(sewer_fittings, "upstream", "Fittings")
+    endpoint_naming(sewer_fittings, "downstream", "Fittings")
 
     # Facility ID (map page)
     selected_null_facilityid = arcpy.SelectLayerByAttribute_management(sewer_mains, "NEW_SELECTION", "FACILITYID IS NULL AND STAGE = 0 AND (WATERTYPE = 'SS' OR WATERTYPE = 'CB')")

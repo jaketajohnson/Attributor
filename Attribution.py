@@ -40,6 +40,7 @@ if __name__ == "__main__":
     Storm.cleanouts()
     Storm.discharges()
     Storm.culverts()
+    Storm.fittings()
     Storm.gravity_mains()
     Logging.logger.info("Storm Start")
 
